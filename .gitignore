@@ -471,7 +471,7 @@ FodyWeavers.xsd
 .idea/**/dynamic.xml
 .idea/**/uiDesigner.xml
 .idea/**/dbnavigator.xml
-
+.idea
 # Gradle
 .idea/**/gradle.xml
 .idea/**/libraries
