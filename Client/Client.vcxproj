@@ -21,10 +21,9 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{0ce7716e-4847-4064-9a86-c4721e0bd64a}</ProjectGuid>
-    <RootNamespace>WindowProgrammingTeamProject</RootNamespace>
+    <ProjectGuid>{eeca798c-6c84-47c1-9e1d-016814933704}</ProjectGuid>
+    <RootNamespace>Client</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>Client</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -76,7 +75,11 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <ConformanceMode>false</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <EnableModules>true</EnableModules>
+      <BuildStlModules>true</BuildStlModules>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -90,7 +93,11 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <ConformanceMode>false</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <EnableModules>true</EnableModules>
+      <BuildStlModules>true</BuildStlModules>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -104,7 +111,11 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <ConformanceMode>false</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <EnableModules>true</EnableModules>
+      <BuildStlModules>true</BuildStlModules>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -118,7 +129,11 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
+      <ConformanceMode>false</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <EnableModules>true</EnableModules>
+      <BuildStlModules>true</BuildStlModules>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -131,23 +146,47 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="resource.h" />
+    <Image Include="Cannon.png" />
+    <Image Include="clear.png" />
+    <Image Include="desertbg_sand.png" />
+    <Image Include="desertbg_sand2.png" />
+    <Image Include="desertbg_sand3.png" />
+    <Image Include="desertbg_sand4.png" />
+    <Image Include="deserttile.png" />
+    <Image Include="deserttiles.png" />
+    <Image Include="forestbg2.png" />
+    <Image Include="foresttiles2.png" />
+    <Image Include="pCharge1.bmp" />
+    <Image Include="pCharge1_mask.bmp" />
+    <Image Include="pCharge2.bmp" />
+    <Image Include="pCharge2_mask.bmp" />
+    <Image Include="pFall.bmp" />
+    <Image Include="pFall_mask.bmp" />
+    <Image Include="pIdle.bmp" />
+    <Image Include="pIdle_mask.bmp" />
+    <Image Include="pJump1.bmp" />
+    <Image Include="pJump1_mask.bmp" />
+    <Image Include="PlayerSprite.png" />
+    <Image Include="PlayerSpriteFix.bmp" />
+    <Image Include="PlayerSpriteFix_mask.bmp" />
+    <Image Include="pMove.bmp" />
+    <Image Include="pMove2.bmp" />
+    <Image Include="pMove2_mask.bmp" />
+    <Image Include="pMove_mask.bmp" />
+    <Image Include="portal.png" />
+    <Image Include="pSlipped.bmp" />
+    <Image Include="pSlipped2.bmp" />
+    <Image Include="pSlipped2_mask.bmp" />
+    <Image Include="SnowBg.png" />
+    <Image Include="snowtile.png" />
+    <Image Include="start_title.png" />
+    <Image Include="wing.png" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="WindowProgrammingTeamProject.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="Cannon.png" />
-    <Image Include="clear.png" />
-    <Image Include="desertbg_sand4.png" />
-    <Image Include="deserttiles.png" />
-    <Image Include="forestbg2.png" />
-    <Image Include="foresttiles2.png" />
-    <Image Include="PlayerSpriteFix.bmp" />
-    <Image Include="PlayerSpriteFix_mask.bmp" />
-    <Image Include="SnowBg.png" />
-    <Image Include="snowtile.png" />
-    <Image Include="start_title.png" />
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

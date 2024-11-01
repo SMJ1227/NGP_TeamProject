@@ -1,0 +1,139 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="소스 파일">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="헤더 파일">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="리소스 파일">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="pCharge1.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pCharge1_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pCharge2.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pCharge2_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pFall.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pFall_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pIdle.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pIdle_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pJump1.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pJump1_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="PlayerSpriteFix.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="PlayerSpriteFix_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pMove.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pMove_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pMove2.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pMove2_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pSlipped.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pSlipped2.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="pSlipped2_mask.bmp">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="Cannon.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="clear.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="desertbg_sand.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="desertbg_sand2.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="desertbg_sand3.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="desertbg_sand4.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="deserttile.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="deserttiles.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="forestbg2.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="foresttiles2.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="PlayerSprite.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="portal.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="SnowBg.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="snowtile.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="start_title.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="wing.png">
+      <Filter>리소스 파일</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="WindowProgrammingTeamProject.rc">
+      <Filter>소스 파일</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
