@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Server", "Server\Server.vcx
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Client", "Client\Client.vcxproj", "{EECA798C-6C84-47C1-9E1D-016814933704}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ServerMock", "ServerMock\ServerMock.vcxproj", "{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -31,6 +33,14 @@ Global
 		{EECA798C-6C84-47C1-9E1D-016814933704}.Release|x64.Build.0 = Release|x64
 		{EECA798C-6C84-47C1-9E1D-016814933704}.Release|x86.ActiveCfg = Release|Win32
 		{EECA798C-6C84-47C1-9E1D-016814933704}.Release|x86.Build.0 = Release|Win32
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Debug|x64.ActiveCfg = Debug|x64
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Debug|x64.Build.0 = Debug|x64
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Debug|x86.ActiveCfg = Debug|Win32
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Debug|x86.Build.0 = Debug|Win32
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Release|x64.ActiveCfg = Release|x64
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Release|x64.Build.0 = Release|x64
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Release|x86.ActiveCfg = Release|Win32
+		{A986775A-70E1-45A0-80BB-5BDCDFC2AC70}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
