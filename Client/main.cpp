@@ -245,8 +245,6 @@ void CheckCollisions();
 void CheckEnemyPlayerCollisions();
 void CheckItemPlayerCollisions();
 void CheckPlayerBulletCollisions();
-std::ofstream clientlog{"looog.txt"};
-std::osyncstream wow{clientlog};
 
 // WinMain 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -300,6 +298,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   return Message.wParam;
 }
 
+std::ofstream clientlog{"client_send.log"};
+std::osyncstream wow{clientlog};
+
 DWORD WINAPI SendClient(LPVOID lp_param) {
   SOCKET server_sock = (SOCKET)lp_param;
   int return_value{};
@@ -319,21 +320,23 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
     // 버퍼 정리
     buffer.clear();
 
-    // 눌린 것이 없으면 넘김
-    if (false == (is_pressed_left || is_pressed_right || is_pressed_space)) {
-      std::this_thread::yield();
-      continue;
-    }
-
     // 유효 입력 처리
-    if (is_pressed_left) {
-      buffer.push_back('0');
-    }
-    if (is_pressed_right) {
-      buffer.push_back('1');
+    if (!(is_pressed_left && is_pressed_right)) {
+      if (is_pressed_left) {
+        buffer.push_back('0');
+      }
+      if (is_pressed_right) {
+        buffer.push_back('1');
+      }
     }
     if (is_pressed_space) {
       buffer.push_back(' ');
+    }
+
+    // 눌린 것이 없으면 넘김
+    if (buffer.empty()) {
+      std::this_thread::yield();
+      continue;
     }
 
     // 전송 및 로그
