@@ -59,6 +59,14 @@ CRITICAL_SECTION cs;
 typedef struct Player {
   int x, y;
   int dx, dy;
+  int jumpSpeed;
+  bool isCharging;
+  bool isJumping;
+  bool isSliding;
+  bool slip;  // 미끄러지는 동안 계속 true
+  bool damaged;
+  string face;  // face: left, right
+  bool EnhancedJumpPower;
 };
 
 typedef struct Item {
@@ -87,7 +95,6 @@ typedef struct MATCH {
   std::vector<Enemy> g_enemies;
   std::vector<Bullet> g_bullets;
 };
-
 std::vector<MATCH> g_matches;
 
 // 클라이언트와 데이터 통신
@@ -123,7 +130,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     EnterCriticalSection(&cs);
     printf("[%s:%d] %s\n", addr, ntohs(clientaddr.sin_port), buf);
     // 메인에서 알려준거에 따라 
-    // p? = buf;
+    // match[메인에서 알려줌].p? = buf;
     LeaveCriticalSection(&cs);
 
     if (retval == SOCKET_ERROR) {
