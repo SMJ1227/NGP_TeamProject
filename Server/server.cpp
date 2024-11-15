@@ -52,22 +52,49 @@ void err_display(int errcode) {
 #define BUFSIZE 512
 
 #include <windows.h>  // windows 관련 함수 포함
+#include <vector>
 
 CRITICAL_SECTION cs;
 
 typedef struct Player {
-  int x;
-  int y;
+  int x, y;
+  int dx, dy;
 };
 
-typedef struct OBJECTS {
-  Player player;
+typedef struct Item {
+  int x, y;
+  int interval;
+  bool disable;
 };
+
+typedef struct Enemy {
+  int x, y;
+};
+
+typedef struct Bullet {
+  int x, y;
+  int dx, dy;
+};
+
+typedef struct MATCH {
+  SOCKET client_sock[2];
+  Player player1;
+  Player player2;
+  char p1, p2;
+  int mapNum;
+  int score;
+  std::vector<Item> g_items;
+  std::vector<Enemy> g_enemies;
+  std::vector<Bullet> g_bullets;
+};
+
+std::vector<MATCH> g_matches;
 
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
   int retval;
   SOCKET client_sock = (SOCKET)arg;
+  // match[메인에서 알려줄 예정].client_socket[메인에서 알려줄예정] = client_sock;
   struct sockaddr_in clientaddr;
   char addr[INET_ADDRSTRLEN];
   int addrlen;
@@ -95,13 +122,14 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     buf[retval] = '\0';
     EnterCriticalSection(&cs);
     printf("[%s:%d] %s\n", addr, ntohs(clientaddr.sin_port), buf);
+    // 메인에서 알려준거에 따라 
+    // p? = buf;
     LeaveCriticalSection(&cs);
 
     if (retval == SOCKET_ERROR) {
       err_display("send()");
       break;
-    }
-    Sleep(100); // 초당 받는 패킷이 너무 많다. 재울까
+    } 
   }
 
   // 소켓 닫기
