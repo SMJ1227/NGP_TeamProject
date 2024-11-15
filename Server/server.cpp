@@ -52,6 +52,7 @@ void err_display(int errcode) {
 #define BUFSIZE 512
 
 #include <windows.h>  // windows 관련 함수 포함
+#include <iostream>
 #include <vector>
 
 CRITICAL_SECTION cs;
@@ -65,7 +66,7 @@ typedef struct Player {
   bool isSliding;
   bool slip;  // 미끄러지는 동안 계속 true
   bool damaged;
-  string face;  // face: left, right
+  std::string face;  // face: left, right
   bool EnhancedJumpPower;
 };
 
@@ -146,6 +147,76 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   LeaveCriticalSection(&cs);
   return 0;
 }
+
+// 방법1. CreateWaitableTimer >> 고정된 짧은 주기와 높은 정확성이 필요한 경우
+DWORD WINAPI clientProcess(LPVOID lpParam) {
+  // 타이머 생성
+  int matchNum; // 메인에서 받을 예정
+  HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
+  if (hTimer == NULL) {
+    printf("타이머 생성 실패\n");
+    return 1;
+  }
+
+  // 타이머 간격을 설정 (1/30초)
+  LARGE_INTEGER liDueTime;  // LARGE_INTEGER는 SetWaitableTimer에서 요구함
+  liDueTime.QuadPart = -333300;
+
+  while (true) {
+    if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
+      printf("타이머 설정 실패\n");
+      CloseHandle(hTimer);
+      return 1;
+    }
+
+    // 타이머 이벤트가 발생할 때까지 대기
+    WaitForSingleObject(hTimer, INFINITE);
+
+    // 매치 데이터 업데이트
+    EnterCriticalSection(&cs);
+    // 플레이어 좌표 이동
+    g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
+    g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
+    // 다른 데이터 업데이트 로직 추가 해야함    
+    LeaveCriticalSection(&cs);
+    //send 추가해야함
+    printf("타이머스레드 일함\n");
+    // 필요에 따라 타이머 중단 조건을 추가.
+  }
+
+  CloseHandle(hTimer);
+  return 0;
+}
+/*
+// 방법2. chrono 기반 >> 가독성과 유지보수가 중요하고 플랫폼 독립적이어야 하는 경우
+#include <chrono>
+#include <thread>
+DWORD WINAPI TimerThread(LPVOID arg) {
+  const int interval = 1000 / 30;  // 1초에 30번 동작
+  while (true) {
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // 매치 데이터 업데이트
+    EnterCriticalSection(&cs);
+    for (size_t i = 0; i < g_matches.size(); ++i) {
+      // 플레이어 1의 x 좌표 이동
+      g_matches[i].player1.x += g_matches[i].player1.dx;
+      g_matches[i].player2.x += g_matches[i].player2.dx;
+
+      // 다른 데이터 업데이트 로직 추가
+    }
+    LeaveCriticalSection(&cs);
+
+    // 33ms 대기 (1초에 30번)
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    if (elapsed.count() < interval) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(interval) - elapsed);
+    }
+  }
+  return 0;
+}
+*/
 
 int main(int argc, char* argv[]) {
   int retval;
