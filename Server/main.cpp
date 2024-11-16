@@ -91,23 +91,23 @@ void err_quit(const char* msg)
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
 	int retval;
 	SOCKET client_sock = (SOCKET)arg;
-	// match[¸ŞÀÎ¿¡¼­ ¾Ë·ÁÁÙ ¿¹Á¤].client_socket[¸ŞÀÎ¿¡¼­ ¾Ë·ÁÁÙ¿¹Á¤] = client_sock;
+	// match[ë©”ì¸ì—ì„œ ì•Œë ¤ì¤„ ì˜ˆì •].client_socket[ë©”ì¸ì—ì„œ ì•Œë ¤ì¤„ì˜ˆì •] = client_sock;
 	struct sockaddr_in clientaddr;
 	char addr[INET_ADDRSTRLEN];
 	int addrlen;
 	char buf[BUFSIZE + 1];
 
-	// Å¬¶óÀÌ¾ğÆ® Á¤º¸ ¾ò±â
+	// í´ë¼ì´ì–¸íŠ¸ ì •ë³´ ì–»ê¸°
 	addrlen = sizeof(clientaddr);
 	getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
 	inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
 	EnterCriticalSection(&cs);
-	printf("\n[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¢¼Ó: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr, ntohs(clientaddr.sin_port));
+	printf("\n[TCP ì„œë²„] í´ë¼ì´ì–¸íŠ¸ ì ‘ì†: IP ì£¼ì†Œ=%s, í¬íŠ¸ ë²ˆí˜¸=%d\n", addr, ntohs(clientaddr.sin_port));
 	LeaveCriticalSection(&cs);
 
 	while (1) {
-		// µ¥ÀÌÅÍ ¹Ş±â
+		// ë°ì´í„° ë°›ê¸°
 		retval = recv(client_sock, buf, BUFSIZE, 0);
 		if (retval == SOCKET_ERROR) {
 			err_display("recv()");
@@ -116,12 +116,12 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
 		else if (retval == 0)
 			break;
 
-		// ¹ŞÀº µ¥ÀÌÅÍ Ãâ·Â
+		// ë°›ì€ ë°ì´í„° ì¶œë ¥
 		buf[retval] = '\0';
 		EnterCriticalSection(&cs);
 		printf("[%s:%d] %s\n", addr, ntohs(clientaddr.sin_port), buf);
-		// ¸ŞÀÎ¿¡¼­ ¾Ë·ÁÁØ°Å¿¡ µû¶ó 
-		// match[¸ŞÀÎ¿¡¼­ ¾Ë·ÁÁÜ].p? = buf;
+		// ë©”ì¸ì—ì„œ ì•Œë ¤ì¤€ê±°ì— ë”°ë¼ 
+		// match[ë©”ì¸ì—ì„œ ì•Œë ¤ì¤Œ].p? = buf;
 		LeaveCriticalSection(&cs);
 
 		if (retval == SOCKET_ERROR) {
@@ -130,48 +130,48 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
 		}
 	}
 
-	// ¼ÒÄÏ ´İ±â
+	// ì†Œì¼“ ë‹«ê¸°
 	EnterCriticalSection(&cs);
 	closesocket(client_sock);
-	printf("[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¾·á: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr, ntohs(clientaddr.sin_port));
+	printf("[TCP ì„œë²„] í´ë¼ì´ì–¸íŠ¸ ì¢…ë£Œ: IP ì£¼ì†Œ=%s, í¬íŠ¸ ë²ˆí˜¸=%d\n", addr, ntohs(clientaddr.sin_port));
 	LeaveCriticalSection(&cs);
 	return 0;
 }
 
-// ¹æ¹ı1. CreateWaitableTimer >> °íÁ¤µÈ ÂªÀº ÁÖ±â¿Í ³ôÀº Á¤È®¼ºÀÌ ÇÊ¿äÇÑ °æ¿ì
+// ë°©ë²•1. CreateWaitableTimer >> ê³ ì •ëœ ì§§ì€ ì£¼ê¸°ì™€ ë†’ì€ ì •í™•ì„±ì´ í•„ìš”í•œ ê²½ìš°
 DWORD WINAPI clientProcess(LPVOID lpParam) {
-	// Å¸ÀÌ¸Ó »ı¼º
+	// íƒ€ì´ë¨¸ ìƒì„±
 	int matchNum = (int)lpParam;
 	HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
 	if (hTimer == NULL) {
-		printf("Å¸ÀÌ¸Ó »ı¼º ½ÇÆĞ\n");
+		printf("íƒ€ì´ë¨¸ ìƒì„± ì‹¤íŒ¨\n");
 		return 1;
 	}
 
-	// Å¸ÀÌ¸Ó °£°İÀ» ¼³Á¤ (1/30ÃÊ)
-	LARGE_INTEGER liDueTime;  // LARGE_INTEGER´Â SetWaitableTimer¿¡¼­ ¿ä±¸ÇÔ
+	// íƒ€ì´ë¨¸ ê°„ê²©ì„ ì„¤ì • (1/30ì´ˆ)
+	LARGE_INTEGER liDueTime;  // LARGE_INTEGERëŠ” SetWaitableTimerì—ì„œ ìš”êµ¬í•¨
 	liDueTime.QuadPart = -333300;
 
 	while (true) {
 		if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
-			printf("Å¸ÀÌ¸Ó ¼³Á¤ ½ÇÆĞ\n");
+			printf("íƒ€ì´ë¨¸ ì„¤ì • ì‹¤íŒ¨\n");
 			CloseHandle(hTimer);
 			return 1;
 		}
 
-		// Å¸ÀÌ¸Ó ÀÌº¥Æ®°¡ ¹ß»ıÇÒ ¶§±îÁö ´ë±â
+		// íƒ€ì´ë¨¸ ì´ë²¤íŠ¸ê°€ ë°œìƒí•  ë•Œê¹Œì§€ ëŒ€ê¸°
 		WaitForSingleObject(hTimer, INFINITE);
 
-		// ¸ÅÄ¡ µ¥ÀÌÅÍ ¾÷µ¥ÀÌÆ®
+		// ë§¤ì¹˜ ë°ì´í„° ì—…ë°ì´íŠ¸
 		EnterCriticalSection(&cs);
-		// ÇÃ·¹ÀÌ¾î ÁÂÇ¥ ÀÌµ¿
+		// í”Œë ˆì´ì–´ ì¢Œí‘œ ì´ë™
 		g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
 		g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
-		// ´Ù¸¥ µ¥ÀÌÅÍ ¾÷µ¥ÀÌÆ® ·ÎÁ÷ Ãß°¡ ÇØ¾ßÇÔ    
+		// ë‹¤ë¥¸ ë°ì´í„° ì—…ë°ì´íŠ¸ ë¡œì§ ì¶”ê°€ í•´ì•¼í•¨    
 		LeaveCriticalSection(&cs);
-		//send Ãß°¡ÇØ¾ßÇÔ
-		printf("Å¸ÀÌ¸Ó½º·¹µå ÀÏÇÔ\n");
-		// ÇÊ¿ä¿¡ µû¶ó Å¸ÀÌ¸Ó Áß´Ü Á¶°ÇÀ» Ãß°¡.
+		//send ì¶”ê°€í•´ì•¼í•¨
+		printf("íƒ€ì´ë¨¸ìŠ¤ë ˆë“œ ì¼í•¨\n");
+		// í•„ìš”ì— ë”°ë¼ íƒ€ì´ë¨¸ ì¤‘ë‹¨ ì¡°ê±´ì„ ì¶”ê°€.
 	}
 
 	CloseHandle(hTimer);
@@ -192,6 +192,7 @@ int main() {
 
 	struct sockaddr_in serveraddr;
 	memset(&serveraddr, 0, sizeof(serveraddr));
+	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	serveraddr.sin_port = htons(SERVERPORT);
 	retval = bind(listen_sock, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
@@ -206,15 +207,16 @@ int main() {
 	recvParam rParam;
 
 	while (1) {
+		printf("ì„œë²„ ëŒ€ê¸°ì¤‘...\n");
 		addrlen = sizeof(clientaddr);
 		rParam.client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
 		if (rParam.client_sock == INVALID_SOCKET) {
 			err_display("accept()");
 			break;
 		}
-		// clinetCount: ÇöÀç Å¬¶óÀÌ¾ğÆ® ¼ö, 2¹øÂ° Å¬¶óÀÌ¾ğÆ®°¡ ¸ÅÄ¡¿¡ Ãß°¡µÇ¸é ´Ù½Ã 0, ¸ÅÄ¡ »ı¼º°ú ¸ÅÄ¡ ³» ÇÃ·¹ÀÌ¾î ¼ö ÆÇ´Ü
-		// matchCount: ÇöÀç ¸ÅÄ¡ ¼ö, 2¹øÂ° Å¬¶óÀÌ¾ğÆ®°¡ ¸ÅÄ¡¿¡ Ãß°¡µÇ¸é +1, ¸ÅÄ¡ ¹øÈ£·Î Àü´Ş
-		// ¸ÅÄ¡°¡ ¾ø¾îÁö¸é matchNum Á¶Á¤ ÇÊ¿ä, Å¬¶óÀÌ¾ğÆ® ¸ŞÀÎ ¸¸µç ÈÄ recv ¼Û¼ö½Å È®ÀÎÇÏ°í Ãß°¡ÇÒ ¿¹Á¤
+		// clinetCount: í˜„ì¬ í´ë¼ì´ì–¸íŠ¸ ìˆ˜, 2ë²ˆì§¸ í´ë¼ì´ì–¸íŠ¸ê°€ ë§¤ì¹˜ì— ì¶”ê°€ë˜ë©´ ë‹¤ì‹œ 0, ë§¤ì¹˜ ìƒì„±ê³¼ ë§¤ì¹˜ ë‚´ í”Œë ˆì´ì–´ ìˆ˜ íŒë‹¨
+		// matchCount: í˜„ì¬ ë§¤ì¹˜ ìˆ˜, 2ë²ˆì§¸ í´ë¼ì´ì–¸íŠ¸ê°€ ë§¤ì¹˜ì— ì¶”ê°€ë˜ë©´ +1, ë§¤ì¹˜ ë²ˆí˜¸ë¡œ ì „ë‹¬
+		// ë§¤ì¹˜ê°€ ì—†ì–´ì§€ë©´ matchNum ì¡°ì • í•„ìš”, í´ë¼ì´ì–¸íŠ¸ ë©”ì¸ ë§Œë“  í›„ recv ì†¡ìˆ˜ì‹  í™•ì¸í•˜ê³  ì¶”ê°€í•  ì˜ˆì •
 		if (clientCount == 0) g_matches.push_back(MATCH());
 		if (g_matches[matchCount].client_sock[clientCount] == NULL) {
 			rParam.playerNum = 0;
