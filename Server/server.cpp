@@ -238,11 +238,10 @@ int main(int argc, char* argv[]) {
       err_display("accept()");
       break;
     }
-    // clinetCount: 현재 클라이언트 수, 2번째 클라이언트가 매치에 추가되면 다시
-    // 0, 매치 생성과 매치 내 플레이어 수 판단 matchCount: 현재 매치 수, 2번째
-    // 클라이언트가 매치에 추가되면 +1, 매치 번호로 전달 매치가 없어지면
-    // matchNum 조정 필요, 클라이언트 메인 만든 후 recv 송수신 확인하고 추가할 예정
-    // 접속한 클라이언트 정보 출력
+    // clinetCount: 현재 클라이언트 수, 2번째 클라이언트가 매치에 추가되면 다시 0, 
+    // 매치 생성과 매치 내 플레이어 수 판단 matchCount: 현재 매치 수, 
+    // 2번째 클라이언트가 매치에 추가되면 +1, 매치 번호로 전달 매치가 없어지면 matchNum 조정 필요, 
+    // 클라이언트 메인 만든 후 recv 송수신 확인하고 추가할 예정
 
     if (clientCount == 0) g_matches.push_back(MATCH());
     if (g_matches[matchCount].client_sock[clientCount] == NULL) {
