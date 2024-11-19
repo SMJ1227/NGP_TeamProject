@@ -55,6 +55,8 @@ void err_display(int errcode) {
 #include <iostream>
 #include <vector>
 
+char clientCount = 0;
+char matchCount = 0;
 CRITICAL_SECTION cs;
 
 typedef struct Player {
@@ -85,8 +87,16 @@ typedef struct Bullet {
   int dx, dy;
 };
 
+struct recvParam {
+  SOCKET client_sock = NULL;
+  char matchNum = NULL;
+  char playerNum = NULL;
+};
+
 typedef struct MATCH {
-  SOCKET client_sock[2];
+  SOCKET client_sock[2]{NULL, NULL};
+  HANDLE recvThread[2]{NULL, NULL};
+  HANDLE timerThread;
   Player player1;
   Player player2;
   char p1, p2;
@@ -187,40 +197,9 @@ DWORD WINAPI clientProcess(LPVOID lpParam) {
   CloseHandle(hTimer);
   return 0;
 }
-/*
-// 방법2. chrono 기반 >> 가독성과 유지보수가 중요하고 플랫폼 독립적이어야 하는 경우
-#include <chrono>
-#include <thread>
-DWORD WINAPI TimerThread(LPVOID arg) {
-  const int interval = 1000 / 30;  // 1초에 30번 동작
-  while (true) {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    // 매치 데이터 업데이트
-    EnterCriticalSection(&cs);
-    for (size_t i = 0; i < g_matches.size(); ++i) {
-      // 플레이어 1의 x 좌표 이동
-      g_matches[i].player1.x += g_matches[i].player1.dx;
-      g_matches[i].player2.x += g_matches[i].player2.dx;
-
-      // 다른 데이터 업데이트 로직 추가
-    }
-    LeaveCriticalSection(&cs);
-
-    // 33ms 대기 (1초에 30번)
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    if (elapsed.count() < interval) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(interval) - elapsed);
-    }
-  }
-  return 0;
-}
-*/
 
 int main(int argc, char* argv[]) {
   int retval;
-  int thread_id = 0;
 
   // 윈속 초기화
   WSADATA wsa;
@@ -244,31 +223,44 @@ int main(int argc, char* argv[]) {
   if (retval == SOCKET_ERROR) err_quit("listen()");
 
   // 데이터 통신에 사용할 변수
-  SOCKET client_sock;
   struct sockaddr_in clientaddr;
   int addrlen;
   HANDLE hThread;
+  recvParam rParam;
   InitializeCriticalSection(&cs);
+
   while (1) {
-    // accept()
+    printf("서버 대기중...\n");
     addrlen = sizeof(clientaddr);
-    client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
-    if (client_sock == INVALID_SOCKET) {
+    rParam.client_sock =
+        accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
+    if (rParam.client_sock == INVALID_SOCKET) {
       err_display("accept()");
       break;
     }
-
+    // clinetCount: 현재 클라이언트 수, 2번째 클라이언트가 매치에 추가되면 다시
+    // 0, 매치 생성과 매치 내 플레이어 수 판단 matchCount: 현재 매치 수, 2번째
+    // 클라이언트가 매치에 추가되면 +1, 매치 번호로 전달 매치가 없어지면
+    // matchNum 조정 필요, 클라이언트 메인 만든 후 recv 송수신 확인하고 추가할 예정
     // 접속한 클라이언트 정보 출력
-    char addr[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-   // printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
 
-    // 스레드 생성
-    hThread = CreateThread(NULL, 0, RecvProcessClient, (LPVOID)client_sock, 0, NULL);
-    if (hThread == NULL) {
-      closesocket(client_sock);
-    } else {
-      CloseHandle(hThread);
+    if (clientCount == 0) g_matches.push_back(MATCH());
+    if (g_matches[matchCount].client_sock[clientCount] == NULL) {
+      rParam.playerNum = 0;
+      rParam.matchNum = matchCount;
+      g_matches[matchCount].recvThread[0] =
+          CreateThread(NULL, 0, RecvProcessClient, &rParam, 0, NULL);
+      clientCount++;
+      hThread = CreateThread(NULL, 0, clientProcess, &matchCount, 0, NULL);
+    } 
+    else if (g_matches[matchCount].client_sock[0] != NULL &&
+               g_matches[matchCount].client_sock[1] == NULL) {
+      rParam.playerNum = 1;
+      rParam.matchNum = matchCount;
+      g_matches[matchCount].recvThread[1] =
+          CreateThread(NULL, 0, RecvProcessClient, &rParam, 0, NULL);
+      matchCount++;
+      clientCount = 0;
     }
   }
 
