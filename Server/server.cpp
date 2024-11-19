@@ -110,9 +110,13 @@ std::vector<MATCH> g_matches;
 
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
+  recvParam* param = (recvParam*)arg;
+  SOCKET client_sock = param->client_sock;
+  char matchNum = param->matchNum;
+  char playerNum = param->playerNum;
+  delete param;  // 동적 할당 해제
+
   int retval;
-  SOCKET client_sock = (SOCKET)arg;
-  // match[메인에서 알려줄 예정].client_socket[메인에서 알려줄예정] = client_sock;
   struct sockaddr_in clientaddr;
   char addr[INET_ADDRSTRLEN];
   int addrlen;
@@ -123,9 +127,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  EnterCriticalSection(&cs);
   printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
-  LeaveCriticalSection(&cs);
 
   while (1) {
     // 데이터 받기
@@ -138,11 +140,21 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
 
     // 받은 데이터 출력
     buf[retval] = '\0';
-    EnterCriticalSection(&cs);
-    printf("[%s:%d] %s\n", addr, ntohs(clientaddr.sin_port), buf);
-    // 메인에서 알려준거에 따라 
-    // match[메인에서 알려줌].p? = buf;
-    LeaveCriticalSection(&cs);
+    
+    if (playerNum == 0) {
+      g_matches[matchNum].p1 = buf[0];
+      EnterCriticalSection(&cs);
+      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
+             g_matches[matchNum].p1);
+      LeaveCriticalSection(&cs);
+    }
+    if (playerNum == 1) {
+      g_matches[matchNum].p2 = buf[0];
+      EnterCriticalSection(&cs);
+      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
+             g_matches[matchNum].p2);
+      LeaveCriticalSection(&cs);
+    }
 
     if (retval == SOCKET_ERROR) {
       err_display("send()");
@@ -158,10 +170,11 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   return 0;
 }
 
-// 방법1. CreateWaitableTimer >> 고정된 짧은 주기와 높은 정확성이 필요한 경우
 DWORD WINAPI clientProcess(LPVOID lpParam) {
   // 타이머 생성
-  int matchNum; // 메인에서 받을 예정
+  int matchNum = *(int*)lpParam;  // 메인에서 받을 예정
+  delete (int*)lpParam;
+
   HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
   if (hTimer == NULL) {
     printf("타이머 생성 실패\n");
@@ -226,15 +239,16 @@ int main(int argc, char* argv[]) {
   struct sockaddr_in clientaddr;
   int addrlen;
   HANDLE hThread;
-  recvParam rParam;
+  recvParam *rParam;
   InitializeCriticalSection(&cs);
 
   while (1) {
     printf("서버 대기중...\n");
     addrlen = sizeof(clientaddr);
-    rParam.client_sock =
-        accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
-    if (rParam.client_sock == INVALID_SOCKET) {
+    // 여기서 rParam 할당 해서 생성 하고 rParam값 주고
+    rParam = new recvParam{};
+    rParam->client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
+    if (rParam->client_sock == INVALID_SOCKET) {
       err_display("accept()");
       break;
     }
@@ -242,22 +256,26 @@ int main(int argc, char* argv[]) {
     // 매치 생성과 매치 내 플레이어 수 판단 matchCount: 현재 매치 수, 
     // 2번째 클라이언트가 매치에 추가되면 +1, 매치 번호로 전달 매치가 없어지면 matchNum 조정 필요, 
     // 클라이언트 메인 만든 후 recv 송수신 확인하고 추가할 예정
+    char addr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
+    printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr,
+           ntohs(clientaddr.sin_port));
 
     if (clientCount == 0) g_matches.push_back(MATCH());
     if (g_matches[matchCount].client_sock[clientCount] == NULL) {
-      rParam.playerNum = 0;
-      rParam.matchNum = matchCount;
+      rParam->playerNum = 0;
+      rParam->matchNum = matchCount;
       g_matches[matchCount].recvThread[0] =
-          CreateThread(NULL, 0, RecvProcessClient, &rParam, 0, NULL);
+          CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       clientCount++;
-      hThread = CreateThread(NULL, 0, clientProcess, &matchCount, 0, NULL);
+      //hThread = CreateThread(NULL, 0, clientProcess, &matchCount, 0, NULL);
     } 
     else if (g_matches[matchCount].client_sock[0] != NULL &&
                g_matches[matchCount].client_sock[1] == NULL) {
-      rParam.playerNum = 1;
-      rParam.matchNum = matchCount;
+      rParam->playerNum = 1;
+      rParam->matchNum = matchCount;
       g_matches[matchCount].recvThread[1] =
-          CreateThread(NULL, 0, RecvProcessClient, &rParam, 0, NULL);
+          CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       matchCount++;
       clientCount = 0;
     }

@@ -178,24 +178,24 @@ WSADATA g_wsa;
 std::string_view const g_server_address{"127.0.0.1"};
 int const g_server_port = 9000;
 HANDLE g_hSendThread{};
-HANDLE g_hRecvThread{};
 
 // 전역 변수
 struct Player {
   int x, y;
-  bool isWarking;
+  int dx, dy;
+  int jumpSpeed;
   bool isCharging;
   bool isJumping;
-  bool isFalling;
   bool isSliding;
+  bool slip;  // 미끄러지는 동안 계속 true
   bool damaged;
-  bool face;
+  string face;  // face: left, right
   bool EnhancedJumpPower;
 } g_player;
-Player otherPlayer;
 
 struct Item {
   int x, y;
+  int type;
   int interval;
   bool disable;
 };
@@ -221,8 +221,14 @@ void DrawForestBg(HDC hDC);
 void DrawForestTile(HDC hDC);
 void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]);
 void InitPlayer();
+void MovePlayer(int map[MAP_HEIGHT][MAP_WIDTH]);
 void DrawSprite(HDC hDC, const int& x, const int& y, const int& width,
                 const int& height);
+void ApplyGravity();
+bool IsColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
+bool IsSlopeGoRightColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
+bool IsSlopeGoLeftColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
+bool IsNextColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
 void InitItems(int map[MAP_HEIGHT][MAP_WIDTH]);
 void GenerateItem(int x, int y, int num);
 void DrawItem(HDC hDC);
@@ -232,8 +238,13 @@ void GenerateEnemy(int x, int y);
 void DrawEnemies(HDC hDC);
 void DeleteAllEnemies();
 void ShootBullet();
+void MoveBullets();
 void DrawBullets(HDC hDC);
 void DeleteAllBullets();
+void CheckCollisions();
+void CheckEnemyPlayerCollisions();
+void CheckItemPlayerCollisions();
+void CheckPlayerBulletCollisions();
 
 // WinMain 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -350,10 +361,6 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
   }
   return 0;
 }
-DWORD WINAPI RecvClient(LPVOID lp_param) {
-
-    return 0; 
-}
 
 //--- CImage 관련 변수 선언
 CImage Snowtile;
@@ -408,16 +415,91 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
         // 접속 성공시 ClientSend, CliendRecv 생성
         g_hSendThread =
             CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
-        g_hRecvThread =
-            CreateThread(NULL, 0, RecvClient, (LPVOID)server_sock, 0, NULL);
 
-
-        /*map_num = 1;
+        map_num = 1;
         InitPlayer();
         InitMap(map, map0);
         InitEnemy(map);
-        InitItems(map);*/
+        InitItems(map);
         KillTimer(hWnd, 2);
+      }
+
+      break;
+    }
+    case 1: {
+      ProcessKeyboard();
+      ApplyGravity();
+      MovePlayer(map);
+      MoveBullets();
+      shootInterval++;
+      for (auto& item : g_items) {
+        if (item.interval <= 0) {
+          item.disable = false;
+        } else {
+          item.interval--;
+        }
+      }
+      if (shootInterval > 120) {
+        ShootBullet();
+        shootInterval = 0;
+      }
+      if (IsNextColliding(map, g_player.x, g_player.y) == true) {
+        if (map_num == 1)
+          InitMap(map, map1);
+        else if (map_num == 2)
+          InitMap(map, map2);
+        InitPlayer();
+        DeleteAllEnemies();
+        DeleteAllBullets();
+        DeleteAllItems();
+        InitEnemy(map);
+        InitItems(map);
+        if (map_num++ == 4) KillTimer(hWnd, 1);
+      }
+
+      CheckCollisions();
+      if (g_player.dx < 0)
+        g_player.face = "left";
+      else if (g_player.dx > 0)
+        g_player.face = "right";
+      if (g_player.dy == 0 && g_player.jumpSpeed == 0 && g_player.dx != 0) {
+        if ((spriteX += spriteWidth) > 230) {
+          spriteX = 0;
+        }
+        spriteY = 24;
+        spriteHeight = 24;
+
+      } else if (g_player.dy == 0 && g_player.jumpSpeed < 0) {
+        spriteX = 0;
+        spriteY = 116;
+        spriteHeight = 22;
+        if (g_player.jumpSpeed == -20) {
+          spriteX = 30;
+        }
+      } else if (g_player.dy < 0) {
+        if ((spriteX += spriteWidth) > 119) {
+          spriteX = 0;
+        }
+        spriteY = 48;
+        spriteHeight = 29;
+      } else if (g_player.dy > 0 && g_player.isSliding == false) {
+        if ((spriteX += spriteWidth) > 59) {
+          spriteX = 0;
+        }
+        spriteY = 77;
+        spriteHeight = 39;
+      } else if (g_player.dy > 0 && g_player.isSliding == true) {
+        if ((spriteX += spriteWidth) > 29) {
+          spriteX = 0;
+        }
+        spriteY = 138;
+        spriteHeight = 25;
+      } else {
+        if ((spriteX += spriteWidth) > 230) {
+          spriteX = 0;
+        }
+        spriteY = 0;
+        spriteHeight = 24;
       }
       break;
     }
@@ -455,9 +537,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           (HBITMAP)LoadBitmap(g_hInst, MAKEINTRESOURCE(PLAYER_SPRITE));
       spriteSheetMask =
           (HBITMAP)LoadBitmap(g_hInst, MAKEINTRESOURCE(PLAYER_SPRITE_MASK));
-      /*
-            플레이어2의 spriteSheet, mask 선언
-      */
+
+      SetTimer(hWnd, 1, 1000 / 60, (TIMERPROC)TimerProc);
       SetTimer(hWnd, 2, 1000 / 60, (TIMERPROC)TimerProc);
       break;
     case WM_CHAR:
@@ -477,8 +558,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       //--- 모든 그리기를 메모리 DC에한다.  ---> 바꾼 부분: CImage 변수는
       // 전역변수로 선언하여 함수의 인자로 보내지 않도록 한다.
-      
-      // mapNum, map, CIMAGE, SPRITE, vector(enemy, bullet, item)에 접근함, 동기화 설정 필요
       if (map_num == 0)
         startImage.Draw(mDC, 0, 0, GRID * 12, GRID * 15);
       else if (map_num == 1) {
@@ -487,7 +566,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, 플레이어2의 spriteX, spriteY, spriteWidth, spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 2) {
         DrawDesertBg(mDC);
@@ -495,7 +573,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, 플레이어2의 spriteX, spriteY, spriteWidth, spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 3) {
         DrawForestBg(mDC);
@@ -503,7 +580,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, 플레이어2의 spriteX, spriteY, spriteWidth, spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 4) {
         endImage.Draw(mDC, BOARD_WIDTH - GRID * 13, BOARD_HEIGHT - GRID * 17,
@@ -555,7 +631,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       endImage.Destroy();
       DeleteObject(spriteSheet);
       DeleteObject(spriteSheetMask);
-      // 플레이어2 스프라이트 DeleteObject
+      KillTimer(hWnd, 1);
+      // KillTimer(hWnd, 2);
       PostQuitMessage(0);
       break;
     default:
@@ -566,6 +643,65 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
 // 키입력
 bool spaceKeyReleased = true;
+void ProcessKeyboard() {
+  // 키 처리
+  if (GetAsyncKeyState(VK_LEFT) & 0x8000) {  // 키가 눌린 상태
+    if (!g_player.isCharging && !g_player.isSliding) {
+      if (g_player.damaged) {
+        return;
+      }
+      g_player.face = "left";
+      if (g_player.dx >= -3) {
+        g_player.dx += -1;
+      }
+    }
+  } else if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {  // 오른쪽 키 처리
+    if (!g_player.isCharging && !g_player.isSliding) {
+      if (g_player.damaged) {
+        return;
+      }
+      g_player.face = "right";
+      if (g_player.dx <= 3) {
+        g_player.dx += 1;
+      }
+    }
+  } else {
+    if (!g_player.damaged && !g_player.isSliding) {
+      if (g_player.dx > 0) {
+        g_player.dx -= 1;  // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+      } else if (g_player.dx < 0) {
+        g_player.dx += 1;  // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+      }
+    }
+  }
+
+  // 스페이스 키 처리
+  if (GetAsyncKeyState(VK_SPACE) & 0x8000) {  // 스페이스 키가 눌린 상태
+    spaceKeyReleased = false;
+    if (!g_player.isJumping && g_player.jumpSpeed > -20) {
+      if (g_player.damaged) {
+        g_player.damaged = false;
+      }
+      g_player.isCharging = true;
+      g_player.dx = 0;
+      g_player.jumpSpeed -= 1;
+      if (g_player.EnhancedJumpPower == 1) {
+        g_player.jumpSpeed = -20;
+      }
+    }
+  } else {  // 스페이스 키가 눌리지 않은 상태
+    if (!spaceKeyReleased && g_player.isCharging) {
+      g_player.dy = g_player.jumpSpeed;
+      g_player.jumpSpeed = 0;
+      g_player.isCharging = false;
+      g_player.isJumping = true;
+      if (g_player.EnhancedJumpPower == 1) {
+        g_player.EnhancedJumpPower = 0;
+      }
+      spaceKeyReleased = true;
+    }
+  }
+}
 
 // 맵
 void DrawSnowTile(HDC hDC) {
@@ -711,6 +847,7 @@ void DrawDesertBg(HDC hDC) {
 void DrawForestBg(HDC hDC) {
   Forestbg.StretchBlt(hDC, -GRID / 2, 0, BOARD_WIDTH, BOARD_HEIGHT, SRCCOPY);
 }
+
 void DrawForestTile(HDC hDC) {
   // 칸당 64x64
   for (int y = 0; y < MAP_HEIGHT; y++) {
@@ -754,24 +891,86 @@ void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]) {
 void InitPlayer() {
   g_player.x = (MAP_WIDTH - 7) * GRID;
   g_player.y = (MAP_HEIGHT - 4) * GRID;
+  g_player.dx = 0;
+  g_player.dy = 0;
+  g_player.jumpSpeed = 0;
   g_player.isCharging = false;
   g_player.isJumping = false;
   g_player.damaged = false;
-  g_player.face = 0;
+  g_player.face = "left";
+}
+
+void MovePlayer(int map[MAP_HEIGHT][MAP_WIDTH]) {
+  int newX = g_player.x + g_player.dx;
+  int newY = g_player.y + g_player.dy;
+
+  bool isVerticalCollision = IsColliding(map, g_player.x, newY);
+  bool isHorizontalCollision = IsColliding(map, newX, g_player.y);
+  bool isSlopeGoRightCollision =
+      IsSlopeGoRightColliding(map, g_player.x, g_player.y);
+  bool isSlopeGoLeftCollision =
+      IsSlopeGoLeftColliding(map, g_player.x, g_player.y);
+
+  // 수직 충돌 처리
+  if (!isVerticalCollision) {
+    g_player.y = newY;
+    if (!g_player.EnhancedJumpPower) {
+      g_player.isJumping = true;
+    }
+  } else {
+    // 바닥 충돌 시 y축 위치 보정
+    if (g_player.dy > 0) {
+      while (!IsColliding(map, g_player.x, g_player.y + 1)) {
+        g_player.y += 1;
+      }
+    }
+    g_player.dy = 0;  // 충돌 후 y축 속도 초기화
+    g_player.isJumping = false;
+    g_player.isSliding = false;
+  }
+
+  // 수평 충돌 처리
+  if (!isHorizontalCollision) {
+    g_player.x = newX;
+  } else {
+    g_player.dx = 0;  // 충돌 후 x축 속도 초기화
+  }
+
+  if (isSlopeGoRightCollision) {
+    g_player.isSliding = true;
+
+    g_player.dy = 1;  // 경사면 위에서 미끄러짐 속도
+    g_player.dx = 3;  // 오른쪽 아래로 미끄러짐
+    newX = g_player.x + g_player.dx;
+    newY = g_player.y + g_player.dy;
+    g_player.x = newX;
+    g_player.y = newY;
+  }
+
+  if (isSlopeGoLeftCollision) {
+    g_player.isSliding = true;
+
+    g_player.dy = 1;   // 경사면 위에서 미끄러짐 속도
+    g_player.dx = -3;  // 오른쪽 아래로 미끄러짐
+    newX = g_player.x + g_player.dx;
+    newY = g_player.y + g_player.dy;
+    g_player.x = newX;
+    g_player.y = newY;
+  }
 }
 
 void DrawSprite(HDC hDC, const int& x, const int& y, const int& width,
                 const int& height) {
   HDC hmemDC = CreateCompatibleDC(hDC);
   HBITMAP oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheetMask);
-  if (g_player.face == 0) {
+  if (g_player.face == "left") {
     StretchBlt(hDC, g_player.x - PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height, SRCAND);
     oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheet);
     StretchBlt(hDC, g_player.x - PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height, SRCPAINT);
     SelectObject(hmemDC, oldBitmap);
-  } else if (g_player.face == 1) {
+  } else if (g_player.face == "right") {
     StretchBlt(hDC, g_player.x + PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                -PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height, SRCAND);
     oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheet);
@@ -781,6 +980,64 @@ void DrawSprite(HDC hDC, const int& x, const int& y, const int& width,
     SelectObject(hmemDC, oldBitmap);
   }
   DeleteDC(hmemDC);
+}
+
+void ApplyGravity() {
+  if (g_player.dy < 20) {
+    g_player.dy += GRAVITY;  // 중력 적용
+  }
+}
+
+bool IsColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int gridX = x / GRID;
+  int gridY = y / GRID;
+
+  if (gridX < 0 || gridX >= MAP_WIDTH || gridY < 0 || gridY >= MAP_HEIGHT) {
+    return true;
+  }
+
+  if (map[gridY][gridX] == 0) {
+    return true;
+  }
+  return false;
+}
+
+bool IsSlopeGoRightColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int leftX = (x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  // 충돌 감지
+  if (map[bottomY][leftX] == 2 || map[bottomY][rightX] == 2) {
+    return true;
+  }
+  return false;
+}
+
+bool IsSlopeGoLeftColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int leftX = (x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  // 충돌 감지
+  if (map[bottomY][leftX] == 3 || map[bottomY][rightX] == 3) {
+    return true;
+  }
+  return false;
+}
+
+bool IsNextColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int leftX = (x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  if (map[topY][leftX] == 6 || map[topY][rightX] == 6) {
+    return true;
+  }
+  return false;
 }
 
 // 아이템
@@ -793,13 +1050,17 @@ void InitItems(int map[MAP_HEIGHT][MAP_WIDTH]) {
     }
   }
 }
+
 void GenerateItem(int x, int y, int num) {
   Item newItem;
   newItem.x = x;
   newItem.y = y;
+  newItem.type = num;
+  newItem.interval = 1;
   newItem.disable = true;
   g_items.push_back(newItem);
 }
+
 void DrawItem(HDC hDC) {
   for (const auto& item : g_items) {
     if (!item.disable) {
@@ -808,6 +1069,7 @@ void DrawItem(HDC hDC) {
     }
   }
 }
+
 void DeleteAllItems() { g_items.clear(); }
 // 적
 void InitEnemy(int map[MAP_HEIGHT][MAP_WIDTH]) {
@@ -819,18 +1081,44 @@ void InitEnemy(int map[MAP_HEIGHT][MAP_WIDTH]) {
     }
   }
 }
+
 void GenerateEnemy(int x, int y) {
   Enemy newEnemy;
   newEnemy.x = x;
   newEnemy.y = y;
   g_enemies.push_back(newEnemy);
 }
+
 void DrawEnemies(HDC hDC) {
   for (const auto& enemy : g_enemies) {
     cannon.StretchBlt(hDC, enemy.x * GRID, enemy.y * GRID, GRID, GRID, SRCCOPY);
   }
 }
+
 void DeleteAllEnemies() { g_enemies.clear(); }
+
+void ShootBullet() {
+  for (const auto& enemy : g_enemies) {
+    Bullet newBullet;
+    newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
+    newBullet.y = enemy.y * GRID + GRID / 2;
+    newBullet.dx = 2;
+    newBullet.dy = 0;
+    g_bullets.push_back(newBullet);
+  }
+}
+
+void MoveBullets() {
+  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
+    it->x += it->dx;
+    it->y += it->dy;
+    if (it->x < 0 || it->x > BOARD_WIDTH) {
+      it = g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
 
 void DrawBullets(HDC hdc) {
   HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 255));
@@ -843,80 +1131,60 @@ void DrawBullets(HDC hdc) {
   }
   DeleteObject(hBrush);
 }
+
 void DeleteAllBullets() { g_bullets.clear(); }
 
-// recv받은 데이터로 출력 정보 업데이트, 수신 버퍼로 전달받은 데이터 해석
-void Update() {
-  for (auto& item : g_items) {
-    // item의 disable을 전달받은 disable로 업데이트
-  }
-    // 맵 변경을 전달받으면 출력 정보 초기화    ex) if(header == 2)
-    /* if (map_num == 1)
-      InitMap(map, map1);
-    else if (map_num == 2)
-      InitMap(map, map2);
-    InitPlayer();
-    DeleteAllEnemies();
-    DeleteAllBullets();
-    DeleteAllItems();
-    InitEnemy(map);
-    InitItems(map);*/
-  
-  if (map_num == 3) {
-      // 4번째 맵 또는 게임 종료를 전달받으면 종료시 필요한 정보로 업데이트
-  }
+// 충돌 확인 함수
+void CheckCollisions() {
+  CheckItemPlayerCollisions();
+  CheckPlayerBulletCollisions();
+  CheckEnemyPlayerCollisions();
+}
 
-    // 여기부터 플레이어 출력을 위한 스프라이트 업데이트 
-    // 1. dx, dy를 멤버에서 제거했으므로 필요한 부분은 상태를 추가함 server 타이머스레드에서 플레이어 상태를 전송할 때, 모든 상태를 보낼 필요가 없어보임
-    // 2. 스프라이트를 각 플레이어의 멤버로 이식하거나 각 플레이어 전용 스프라이트 두 개 만들기
-
-  if (g_player.isWarking) {  // 걷기 스프라이트
-    if ((spriteX += spriteWidth) > 230) {
-      spriteX = 0;
-      spriteY = 24;
-      spriteHeight = 24;
+void CheckEnemyPlayerCollisions() {
+  for (auto it = g_enemies.begin(); it != g_enemies.end();) {
+    if (g_player.x >= it->x * GRID && g_player.x <= (it->x + 1) * GRID &&
+        g_player.y >= it->y * GRID && g_player.y <= (it->y + 1) * GRID) {
+      g_player.dx = 4;
+      g_player.isCharging = false;
+      g_player.jumpSpeed = 0;
+      ++it;  // 충돌 시 반복자를 증가시킵니다.
+    } else {
+      ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
     }
-  }
-
-  else if (g_player.isCharging) {
-    spriteX = 0;
-    spriteY = 116;
-    spriteHeight = 22;
-        /*if (g_player.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈
-          spriteX = 30;
-        }*/
-  } 
-
-  else if (g_player.isFalling) {
-    if ((spriteX += spriteWidth) > 119) {
-      spriteX = 0;
-    }
-    spriteY = 48;
-    spriteHeight = 29;
-  } 
-
-  else if (g_player.isJumping /*&& !g_player.isSliding*/) {
-    if ((spriteX += spriteWidth) > 59) {
-      spriteX = 0;
-    }
-    spriteY = 77;
-    spriteHeight = 39;
-  }
-
-  else if (g_player.isSliding) {
-    if ((spriteX += spriteWidth) > 29) {
-      spriteX = 0;
-    }
-    spriteY = 138;
-    spriteHeight = 25;
-  }
-
-  else {
-    if ((spriteX += spriteWidth) > 230) {
-      spriteX = 0;
-    }
-    spriteY = 0;
-    spriteHeight = 24;
   }
 }
-    
+
+void CheckItemPlayerCollisions() {
+  for (auto it = g_items.begin(); it != g_items.end();) {
+    if (g_player.x >= it->x * GRID && g_player.x <= (it->x + 1) * GRID &&
+        g_player.y >= it->y * GRID && g_player.y <= (it->y + 1) * GRID) {
+      if ((*it).type == 0) {
+        g_player.EnhancedJumpPower = true;
+        g_player.isJumping = false;
+        it->disable = true;
+        it->interval = 60;
+      }
+    }
+    ++it;
+  }
+}
+
+void CheckPlayerBulletCollisions() {
+  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
+    if (it->x >= g_player.x - PLAYER_SIZE &&
+        it->x <= g_player.x + PLAYER_SIZE &&
+        it->y >= g_player.y - PLAYER_SIZE &&
+        it->y <= g_player.y + PLAYER_SIZE) {
+      // 플레이어를 뒤로 밀침
+      g_player.dx = it->dx * 2;
+      g_player.isCharging = false;
+      g_player.jumpSpeed = 0;
+      g_player.damaged = true;
+      // 플레이어와 충돌 시 제거
+      it = g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
