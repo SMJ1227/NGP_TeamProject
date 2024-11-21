@@ -308,11 +308,11 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   int return_value{};
   int constexpr BUFF_SIZE = 100;
   std::array<char, BUFF_SIZE> recv_buff{};
+  using namespace game_protocol;
+  PacketHeader header_buffer{};
   while (true) {
-    using namespace game_protocol;
-
-    return_value =
-        recv(server_sock, recv_buff.data(), sizeof(PacketHeader), MSG_WAITALL);
+    return_value = recv(server_sock, reinterpret_cast<char*>(&header_buffer),
+                        sizeof(PacketHeader), MSG_WAITALL);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -325,7 +325,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
         return -1;
       }
     }
-    switch (static_cast<PKT_CAT>(recv_buff[0])) {
+    switch (static_cast<PKT_CAT>(header_buffer.header)) {
       case PKT_CAT::PLAYER_INFO: {
         return_value = recv(server_sock, recv_buff.data(), sizeof(PlayerInfo),
                             MSG_WAITALL);
@@ -343,6 +343,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
         std::memcpy(&change_map, recv_buff.data(), sizeof(MapInfo));
         std::println(wow, "MapInfo recv  {} = {}", return_value,
                      change_map.mapNum);
+        wow.emit();
         break;
       }
       default:
