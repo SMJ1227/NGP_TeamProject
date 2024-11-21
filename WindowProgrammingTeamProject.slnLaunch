@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "클라이언트 통신 테스트",
+    "Projects": [
+      {
+        "Path": "ServerMock\\ServerMock.vcxproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "Client\\Client.vcxproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

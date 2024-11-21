@@ -1,14 +1,15 @@
 //
 // Created by sang hyeon, son
 //
-#include "../Client/network_util.hpp"
-// #include "protocol.hpp"
 #include <array>
 #include <iostream>
 #include <print>
 #include <string_view>
 #include <syncstream>
 #include <thread>
+
+#include "../Client/network_util.hpp"
+#include "../Client/protocol.hpp"
 
 namespace server_mock {
 int constexpr BUF_SIZE = 1;
@@ -38,6 +39,32 @@ void recv_handler(SOCKET client_sock) {
       counted = 0;
     }
     std::print("{}", std::string_view{buf});
+    auto a = game_protocol::PlayerInfoPacket{.header{1},
+                                             .info{.x = 10,
+                                                   .y = 15,
+                                                   .isCharging = true,
+                                                   .isJumping = false,
+                                                   .isSliding = true,
+                                                   .damaged = false,
+                                                   .face = true,
+                                                   .isItemDisable = false,
+                                                   .bulletX = 20,
+                                                   .bulletY = 25}};
+    std::memcpy(buf.data(), &a, sizeof(a));
+    return_value = send(client_sock, buf.data(), sizeof(a), 0);
+    switch (return_value) {
+      case SOCKET_ERROR: {
+        // 수신 문제
+        err_display(" : recv error");
+        return;
+      }
+      case 0: {
+        // 접속 종료 시 처리
+        err_display(" : disconnected");
+        return;
+      }
+    }
+    std::println("{}", std::string_view{buf});
   }
 }
 
@@ -56,6 +83,11 @@ int main() {
   if (INVALID_SOCKET == listen_sock) {
     err_quit("socket()");
   }
+
+  // 네이글 알고리즘 끄기
+  DWORD opt_val = 1;
+  setsockopt(listen_sock, IPPROTO_TCP, TCP_NODELAY, (char const *)&opt_val,
+             sizeof(opt_val));
 
   // 소켓 주소 구조체 초기화, bind(), listen()
   sockaddr_in server_addr{
