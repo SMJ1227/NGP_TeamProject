@@ -320,6 +320,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
     // 버퍼 정리
     buffer.clear();
 
+
     // 유효 입력 처리
     if (!(is_pressed_left && is_pressed_right)) {
       if (is_pressed_left) {
@@ -332,6 +333,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
     if (is_pressed_space) {
       buffer.push_back(' ');
     }
+
 
     // 눌린 것이 없으면 넘김
     if (buffer.empty()) {
