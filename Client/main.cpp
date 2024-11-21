@@ -331,11 +331,20 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                             MSG_WAITALL);
         auto player = PlayerInfo{};
         std::memcpy(&player, recv_buff.data(), sizeof(PlayerInfo));
-        std::println(wow, "recv {} = {}:{}", return_value, player.x, player.y);
+        std::println(wow, "PLAYER_INFO recv  {} = {}:{}", return_value,
+                     player.x, player.y);
         wow.emit();
         break;
       }
-
+      case PKT_CAT::CHANGE_MAP: {
+        return_value =
+            recv(server_sock, recv_buff.data(), sizeof(MapInfo), MSG_WAITALL);
+        auto change_map = MapInfo{};
+        std::memcpy(&change_map, recv_buff.data(), sizeof(MapInfo));
+        std::println(wow, "MapInfo recv  {} = {}", return_value,
+                     change_map.mapNum);
+        break;
+      }
       default:
         break;
     }
@@ -383,7 +392,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-    std::println(wow, "res {} = {}:{}", return_value, std::string_view{buffer},
+    std::println(wow, "send {} = {}:{}", return_value, std::string_view{buffer},
                  buffer.size());
     wow.emit();
 
@@ -460,7 +469,7 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
             CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
 
         g_hRecvThread =
-            CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
+            CreateThread(NULL, 0, RecvClient, (LPVOID)server_sock, 0, NULL);
 
         map_num = 1;
         InitPlayer();

@@ -12,7 +12,7 @@
 #include "../Client/protocol.hpp"
 
 namespace server_mock {
-int constexpr BUF_SIZE = 1;
+int constexpr BUF_SIZE = 100;
 int constexpr SERVER_PORT = 9000;
 
 void recv_handler(SOCKET client_sock) {
@@ -21,7 +21,7 @@ void recv_handler(SOCKET client_sock) {
   while (true) {
     // 버퍼
     std::array<char, BUF_SIZE> buf{};
-    return_value = recv(client_sock, buf.data(), buf.size(), MSG_WAITALL);
+    return_value = recv(client_sock, buf.data(), 1, MSG_WAITALL);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -39,19 +39,29 @@ void recv_handler(SOCKET client_sock) {
       counted = 0;
     }
     std::print("{}", std::string_view{buf});
-    auto a = game_protocol::PlayerInfoPacket{.header{1},
-                                             .info{.x = 10,
-                                                   .y = 15,
-                                                   .isCharging = true,
-                                                   .isJumping = false,
-                                                   .isSliding = true,
-                                                   .damaged = false,
-                                                   .face = true,
-                                                   .isItemDisable = false,
-                                                   .bulletX = 20,
-                                                   .bulletY = 25}};
-    std::memcpy(buf.data(), &a, sizeof(a));
-    return_value = send(client_sock, buf.data(), sizeof(a), 0);
+    int packet_size{};
+
+    if (rand() % 2) {
+      auto temp_player_info =
+          game_protocol::PlayerInfoPacket{.info{.x = 10,
+                                                .y = 15,
+                                                .isCharging = true,
+                                                .isJumping = false,
+                                                .isSliding = true,
+                                                .damaged = false,
+                                                .face = true,
+                                                .isItemDisable = false,
+                                                .bulletX = 20,
+                                                .bulletY = 25}};
+      packet_size = sizeof(temp_player_info);
+      std::memcpy(buf.data(), &temp_player_info, packet_size);
+    } else {
+      auto temp_map_info = game_protocol::MapInfoPacket{.info = 4};
+      packet_size = sizeof(temp_map_info);
+      std::memcpy(buf.data(), &temp_map_info, packet_size);
+    }
+
+    return_value = send(client_sock, buf.data(), packet_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -64,7 +74,7 @@ void recv_handler(SOCKET client_sock) {
         return;
       }
     }
-    std::println("{}", std::string_view{buf});
+    std::print(", send {}", std::string_view{buf});
   }
 }
 

@@ -11,8 +11,6 @@ int const g_server_port = 9000;
 
 // PACKET_CATEGORY
 enum class PKT_CAT : std::int8_t { PLAYER_INFO = 1, CHANGE_MAP = 2 };
-std::int8_t constexpr PACKET_HEADER_PLAYER_INFO = 1;
-std::int8_t constexpr PACKET_HEADER_CHANGE_MAP = 2;
 
 #pragma pack(push, 1)
 struct PacketHeader {
@@ -31,9 +29,19 @@ struct PlayerInfo {
 };
 
 struct PlayerInfoPacket {
-  PacketHeader header;
+  PacketHeader header{.header = 1};
   PlayerInfo info;
 };
+
+struct MapInfo {
+  std::int32_t mapNum;
+};
+
+struct MapInfoPacket {
+  PacketHeader header{.header = 2};
+  MapInfo info;
+};
+
 #pragma pack(pop)
 
 }  // namespace game_protocol
