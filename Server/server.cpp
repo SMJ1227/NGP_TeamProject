@@ -55,8 +55,6 @@ void err_display(int errcode) {
 #include <iostream>
 #include <vector>
 
-char clientCount = 0;
-char matchCount = 0;
 CRITICAL_SECTION cs;
 
 typedef struct Player {
@@ -68,7 +66,7 @@ typedef struct Player {
   bool isSliding;
   bool slip;  // 미끄러지는 동안 계속 true
   bool damaged;
-  std::string face;  // face: left, right
+  bool face;  // face: left: 0, right: 1
   bool EnhancedJumpPower;
 };
 
@@ -106,6 +104,7 @@ typedef struct MATCH {
   SendPlayer SPlayer1;
   Player player2;
   SendPlayer SPlayer2;
+  char matchNum = 0;
   char p1 = 'a';
   char p2 = 'a';
   int mapNum;
@@ -113,8 +112,33 @@ typedef struct MATCH {
   std::vector<Item> g_items;
   std::vector<Enemy> g_enemies;
   std::vector<Bullet> g_bullets;
+
+  bool operator==(const MATCH& other) {
+    return client_sock[0] == other.client_sock[0] &&
+           client_sock[1] == other.client_sock[1];
+  }
 };
 std::vector<MATCH> g_matches;
+
+// 매치를 삭제하는 함수
+void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
+  // 디버그용 출력
+  printf("%d매치의 %d번 플레이어의 연결이 종료됐습니다\n", matchNum, playerNum);
+
+  std::vector<MATCH>::iterator iter = g_matches.begin();
+  for (int i = 0; i < matchNum; i++) iter++;
+  g_matches.erase(std::remove(g_matches.begin(), g_matches.end(), *iter),
+                  g_matches.end());
+  // 디버그용 출력
+  printf("매치 원소 삭제\n");
+
+  for (int i = 0; i < g_matches.size(); i++) {
+    g_matches[i].matchNum = i;
+  }
+
+  // 바꾼 matchNum을 다른 스레드에도 적용시켜야함
+  // -> 각 recv스레드에서 반복문이 시작될 때 자신의 매치 번호를 검사한다
+}
 
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
@@ -138,10 +162,30 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
 
   while (1) {
+    // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
+    // 번호가 일치하는 지 비교한다, 다르다면 감소
+    EnterCriticalSection(&cs);
+    while (!(matchNum < 0) && matchNum < g_matches.size() &&
+           g_matches[matchNum].matchNum != matchNum) {
+      // 디버그용 출력
+      printf(
+          "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
+          "않음, matchNum감소\n",
+          matchNum, g_matches[matchNum].matchNum);
+      matchNum--;
+    }
+    LeaveCriticalSection(&cs);
+
+    // 디버그용 출력
+    printf("\nrecvThread 루프 시작, matchNum: %d, playerNum: %d\n", matchNum,
+           playerNum); 
     // 데이터 받기
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
+      EnterCriticalSection(&cs);
+      closeSocketFunc(client_sock, matchNum, playerNum);
+      LeaveCriticalSection(&cs);
       break;
     } else if (retval == 0)
       break;
@@ -254,6 +298,19 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
     // 매치 데이터 업데이트
     EnterCriticalSection(&cs);
+
+        // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
+    // 번호가 일치하는 지 비교한다, 다르다면 감소
+    while (!(matchNum < 0) && matchNum < g_matches.size() &&
+           g_matches[matchNum].matchNum != matchNum) {
+      // 디버그용 출력
+      printf(
+          "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
+          "않음, matchNum감소\n",
+          matchNum, g_matches[matchNum].matchNum);
+      matchNum--;
+    }
+
     // 플레이어 좌표 이동
     updatePlayer(matchNum);
     // printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
@@ -314,47 +371,57 @@ int main(int argc, char* argv[]) {
   struct sockaddr_in clientaddr;
   int addrlen;
   HANDLE hThread;
-  recvParam *rParam;
+  recvParam* rParam;
   InitializeCriticalSection(&cs);
 
   while (1) {
+    // 디버그용 출력
     printf("서버 대기중...\n");
     addrlen = sizeof(clientaddr);
+    // 여기서 rParam 할당 해서 생성 하고 rParam값 주고
     rParam = new recvParam{};
-    rParam->client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
+    rParam->client_sock =
+        accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
     if (rParam->client_sock == INVALID_SOCKET) {
       err_display("accept()");
       break;
     }
-    // clinetCount: 현재 클라이언트 수, 2번째 클라이언트가 매치에 추가되면 다시 0, 
-    // 매치 생성과 매치 내 플레이어 수 판단 matchCount: 현재 매치 수, 
-    // 2번째 클라이언트가 매치에 추가되면 +1, 매치 번호로 전달 매치가 없어지면 matchNum 조정 필요, 
-    // 클라이언트 메인 만든 후 recv 송수신 확인하고 추가할 예정
+    // 매치 생성 조건 - 현재 매치가 없거나(0), 마지막 매치의 player가 다
+    // 차있으면 생성 플레이어 1 생성 조건: 마지막 매치의 소켓0번이 비었으면 생성
+    // 플레이어 2 생성 조건: 마지막 매치의 소켓1이 차있고 소켓2가 비었으면 생성
+    // 타이머 생성 조건: 플레이어 1 생성할 때
     char addr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
     printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr,
            ntohs(clientaddr.sin_port));
-
-    if (clientCount == 0) g_matches.push_back(MATCH());
-    // 매치 구조체 초기화 해야함 
-    // 
-    if (g_matches[matchCount].client_sock[clientCount] == NULL) {
+    // 매치 생성
+    if (g_matches.size() == 0 ||
+        (!g_matches.empty() && (g_matches.end())->client_sock[0] == !NULL &&
+         (g_matches.end())->client_sock[1] == !NULL))
+      g_matches.push_back(MATCH());
+    // 플레이어1 스레드, 타이머 스레드 생성
+    if ((g_matches.end() - 1)->client_sock[0] == NULL) {
       rParam->playerNum = 0;
-      rParam->matchNum = matchCount;
-      g_matches[matchCount].client_sock[clientCount] = rParam->client_sock;
-      g_matches[matchCount].recvThread[0] = CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
-      clientCount++;
-      int* pMatchNum = new int(matchCount);
-      g_matches[matchCount].timerThread = CreateThread(NULL, 0, timerProcessClient, pMatchNum, 0, NULL);
-    } 
-    else if (g_matches[matchCount].client_sock[0] != NULL &&
-               g_matches[matchCount].client_sock[1] == NULL) {
-      rParam->playerNum = 1;
-      rParam->matchNum = matchCount;
-      g_matches[matchCount].recvThread[1] =
+      rParam->matchNum = g_matches.size() - 1;
+      (g_matches.end() - 1)->recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
-      matchCount++;
-      clientCount = 0;
+      // 디버그용 출력
+      printf("%zu번 매치 대기중.. 클라이언트 수: %d\n", g_matches.size() - 1,
+             1);
+      // 타이머 스레드 생성
+      // hThread = CreateThread(NULL, 0, clientProcess, g_matches.size() - 1, 0,
+      // NULL);
+    }
+    // 플레이어2 스레드 생성
+    else if ((g_matches.end() - 1)->client_sock[0] != NULL &&
+             (g_matches.end() - 1)->client_sock[1] == NULL) {
+      rParam->playerNum = 1;
+      rParam->matchNum = g_matches.size() - 1;
+      // 디버그용 출력
+      printf("%d번째 매치 %번째 플레이어 스레드 생성", rParam->matchNum,
+             rParam->playerNum);
+      (g_matches.end() - 1)->recvThread[1] =
+          CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
     }
   }
 
