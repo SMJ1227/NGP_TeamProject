@@ -6,6 +6,7 @@
 //
 #include <windows.h>
 
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -14,6 +15,7 @@
 #include <vector>
 
 #include "network_util.hpp"
+#include "protocol.hpp"
 #include "resource.h"
 
 #pragma comment(lib, "ws2_32")
@@ -175,9 +177,9 @@ LPCTSTR lpszClass = L"Window Class Name";
 LPCTSTR lpszWindowName = L"JumpKing";
 
 WSADATA g_wsa;
-std::string_view const g_server_address{"127.0.0.1"};
-int const g_server_port = 9000;
+
 HANDLE g_hSendThread{};
+HANDLE g_hRecvThread{};
 
 // 전역 변수
 struct Player {
@@ -301,6 +303,56 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 std::ofstream clientlog{"client_send.log"};
 std::osyncstream wow{clientlog};
 
+DWORD WINAPI RecvClient(LPVOID lp_param) {
+  SOCKET server_sock = (SOCKET)lp_param;
+  int return_value{};
+  int constexpr BUFF_SIZE = 100;
+  std::array<char, BUFF_SIZE> recv_buff{};
+  using namespace game_protocol;
+  PacketHeader header_buffer{};
+  while (true) {
+    return_value = recv(server_sock, reinterpret_cast<char*>(&header_buffer),
+                        sizeof(PacketHeader), MSG_WAITALL);
+    switch (return_value) {
+      case SOCKET_ERROR: {
+        // 수신 문제
+        err_display(" : recv error");
+        return -1;
+      }
+      case 0: {
+        // 접속 종료 시 처리
+        err_display(" : disconnected");
+        return -1;
+      }
+    }
+    switch (static_cast<PKT_CAT>(header_buffer.header)) {
+      case PKT_CAT::PLAYER_INFO: {
+        return_value = recv(server_sock, recv_buff.data(), sizeof(PlayerInfo),
+                            MSG_WAITALL);
+        auto player = PlayerInfo{};
+        std::memcpy(&player, recv_buff.data(), sizeof(PlayerInfo));
+        std::println(wow, "PLAYER_INFO recv  {} = {}:{}", return_value,
+                     player.x, player.y);
+        wow.emit();
+        break;
+      }
+      case PKT_CAT::CHANGE_MAP: {
+        return_value =
+            recv(server_sock, recv_buff.data(), sizeof(MapInfo), MSG_WAITALL);
+        auto change_map = MapInfo{};
+        std::memcpy(&change_map, recv_buff.data(), sizeof(MapInfo));
+        std::println(wow, "MapInfo recv  {} = {}", return_value,
+                     change_map.mapNum);
+        wow.emit();
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return 0;
+}
+
 DWORD WINAPI SendClient(LPVOID lp_param) {
   SOCKET server_sock = (SOCKET)lp_param;
   int return_value{};
@@ -320,7 +372,6 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
     // 버퍼 정리
     buffer.clear();
 
-
     // 유효 입력 처리
     if (!(is_pressed_left && is_pressed_right)) {
       if (is_pressed_left) {
@@ -334,7 +385,6 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       buffer.push_back(' ');
     }
 
-
     // 눌린 것이 없으면 넘김
     if (buffer.empty()) {
       std::this_thread::yield();
@@ -343,7 +393,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-    std::println(wow, "res {} = {}:{}", return_value, std::string_view{buffer},
+    std::println(wow, "send {} = {}:{}", return_value, std::string_view{buffer},
                  buffer.size());
     wow.emit();
 
@@ -400,9 +450,10 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
         }
 
         sockaddr_in serveraddr{.sin_family = AF_INET,
-                               .sin_port = htons(g_server_port)};
+                               .sin_port = htons(game_protocol::g_server_port)};
         return_value =
-            inet_pton(AF_INET, g_server_address.data(), &serveraddr.sin_addr);
+            inet_pton(AF_INET, game_protocol::g_server_address.data(),
+                      &serveraddr.sin_addr);
         if (SOCKET_ERROR == return_value) {
           err_quit("유효하지 않은 주소가 입력되었습니다.");
         }
@@ -417,6 +468,9 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
         // 접속 성공시 ClientSend, CliendRecv 생성
         g_hSendThread =
             CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
+
+        g_hRecvThread =
+            CreateThread(NULL, 0, RecvClient, (LPVOID)server_sock, 0, NULL);
 
         map_num = 1;
         InitPlayer();

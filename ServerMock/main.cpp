@@ -1,8 +1,6 @@
 //
 // Created by sang hyeon, son
 //
-#include "../Client/network_util.hpp"
-// #include "protocol.hpp"
 #include <array>
 #include <iostream>
 #include <print>
@@ -10,8 +8,11 @@
 #include <syncstream>
 #include <thread>
 
+#include "../Client/network_util.hpp"
+#include "../Client/protocol.hpp"
+
 namespace server_mock {
-int constexpr BUF_SIZE = 1;
+int constexpr BUF_SIZE = 100;
 int constexpr SERVER_PORT = 9000;
 
 void recv_handler(SOCKET client_sock) {
@@ -20,7 +21,7 @@ void recv_handler(SOCKET client_sock) {
   while (true) {
     // 버퍼
     std::array<char, BUF_SIZE> buf{};
-    return_value = recv(client_sock, buf.data(), buf.size(), MSG_WAITALL);
+    return_value = recv(client_sock, buf.data(), 1, MSG_WAITALL);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -38,6 +39,42 @@ void recv_handler(SOCKET client_sock) {
       counted = 0;
     }
     std::print("{}", std::string_view{buf});
+    int packet_size{};
+
+    if (rand() % 2) {
+      auto temp_player_info =
+          game_protocol::PlayerInfoPacket{.info{.x = 10,
+                                                .y = 15,
+                                                .isCharging = true,
+                                                .isJumping = false,
+                                                .isSliding = true,
+                                                .damaged = false,
+                                                .face = true,
+                                                .isItemDisable = false,
+                                                .bulletX = 20,
+                                                .bulletY = 25}};
+      packet_size = sizeof(temp_player_info);
+      std::memcpy(buf.data(), &temp_player_info, packet_size);
+    } else {
+      auto temp_map_info = game_protocol::MapInfoPacket{.info = 4};
+      packet_size = sizeof(temp_map_info);
+      std::memcpy(buf.data(), &temp_map_info, packet_size);
+    }
+
+    return_value = send(client_sock, buf.data(), packet_size, 0);
+    switch (return_value) {
+      case SOCKET_ERROR: {
+        // 수신 문제
+        err_display(" : recv error");
+        return;
+      }
+      case 0: {
+        // 접속 종료 시 처리
+        err_display(" : disconnected");
+        return;
+      }
+    }
+    std::print(", send {}", std::string_view{buf});
   }
 }
 
@@ -56,6 +93,11 @@ int main() {
   if (INVALID_SOCKET == listen_sock) {
     err_quit("socket()");
   }
+
+  // 네이글 알고리즘 끄기
+  DWORD opt_val = 1;
+  setsockopt(listen_sock, IPPROTO_TCP, TCP_NODELAY, (char const *)&opt_val,
+             sizeof(opt_val));
 
   // 소켓 주소 구조체 초기화, bind(), listen()
   sockaddr_in server_addr{

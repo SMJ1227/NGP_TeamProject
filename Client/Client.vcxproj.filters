@@ -138,5 +138,8 @@
     <ClInclude Include="network_util.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="protocol.hpp">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
