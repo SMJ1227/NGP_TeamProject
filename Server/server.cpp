@@ -72,6 +72,11 @@ typedef struct Player {
   bool EnhancedJumpPower;
 };
 
+typedef struct SendPlayer {
+  int x, y;
+  char acting;
+};
+
 typedef struct Item {
   int x, y;
   int interval;
@@ -98,7 +103,9 @@ typedef struct MATCH {
   HANDLE recvThread[2]{NULL, NULL};
   HANDLE timerThread;
   Player player1;
+  SendPlayer SPlayer1;
   Player player2;
+  SendPlayer SPlayer2;
   char p1 = 'a';
   char p2 = 'a';
   int mapNum;
@@ -144,9 +151,6 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
-      EnterCriticalSection(&cs);
-      // printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port), g_matches[matchNum].p1);
-      LeaveCriticalSection(&cs);
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
@@ -171,8 +175,6 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
 
 void updatePlayer(int matchNum) {
   // player1 처리
-
-  //printf("%c\r", g_matches[matchNum].p1);
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
       g_matches[matchNum].player1.dx -= 1;
@@ -194,7 +196,6 @@ void updatePlayer(int matchNum) {
   g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
   g_matches[matchNum].p1 = 'a';
   // player2 처리
-  /*
   if (g_matches[matchNum].p2 == 0) {
     if (g_matches[matchNum].player2.dx >= -3) {
       g_matches[matchNum].player2.dx -= 1;
@@ -214,7 +215,17 @@ void updatePlayer(int matchNum) {
     }
   }
   g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
-  */
+}
+
+void updateSP(int matchNum) {
+  //player 1
+    g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
+    g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
+    g_matches[matchNum].SPlayer1.acting = 0; // 추후 충돌처리 이후 추가
+  //player 2
+    g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
+    g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
+    g_matches[matchNum].SPlayer2.acting = 0;  // 추후 충돌처리 이후 추가
 }
 
 DWORD WINAPI timerProcessClient(LPVOID lpParam) {
@@ -243,14 +254,15 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
     // 매치 데이터 업데이트
     EnterCriticalSection(&cs);
-    // 플레이어 좌표 이동   
+    // 플레이어 좌표 이동
     updatePlayer(matchNum);
-     printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
-    // 다른 데이터 업데이트 로직 추가 해야함    
+    // printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
+    updateSP(matchNum);
+    // printf("%d, %d\r", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
     // send 부분
     char sendBuf[BUFSIZE];
-    int sendSize = snprintf(sendBuf, BUFSIZE, "P1_X:%d,P2_X:%d",
-                 g_matches[matchNum].player1.x, g_matches[matchNum].player2.x);
+    int sendSize = snprintf(sendBuf, BUFSIZE, "%d, %d, %c", g_matches[matchNum].SPlayer1.x,
+        g_matches[matchNum].SPlayer2.x, g_matches[matchNum].SPlayer2.acting);
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
