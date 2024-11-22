@@ -99,7 +99,8 @@ typedef struct MATCH {
   HANDLE timerThread;
   Player player1;
   Player player2;
-  char p1, p2;
+  char p1 = 'a';
+  char p2 = 'a';
   int mapNum;
   int score;
   std::vector<Item> g_items;
@@ -144,15 +145,13 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
       EnterCriticalSection(&cs);
-      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
-             g_matches[matchNum].p1);
+      // printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port), g_matches[matchNum].p1);
       LeaveCriticalSection(&cs);
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
       EnterCriticalSection(&cs);
-      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
-             g_matches[matchNum].p2);
+      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port), g_matches[matchNum].p2);
       LeaveCriticalSection(&cs);
     }
 
@@ -170,11 +169,58 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   return 0;
 }
 
-DWORD WINAPI clientProcess(LPVOID lpParam) {
-  // 타이머 생성
-  int matchNum = *(int*)lpParam;  // 메인에서 받을 예정
-  delete (int*)lpParam;
+void updatePlayer(int matchNum) {
+  // player1 처리
 
+  //printf("%c\r", g_matches[matchNum].p1);
+  if (g_matches[matchNum].p1 == '0') {
+    if (g_matches[matchNum].player1.dx >= -3) {
+      g_matches[matchNum].player1.dx -= 1;
+    }
+  } 
+  else if (g_matches[matchNum].p1 == '1') {
+    if (g_matches[matchNum].player1.dx <= 3) {
+      g_matches[matchNum].player1.dx += 1;
+    }
+  } 
+  else if (g_matches[matchNum].p1 != '0' && g_matches[matchNum].p1 != '1') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player1.dx > 0) {
+      g_matches[matchNum].player1.dx -= 1;
+    } else if (g_matches[matchNum].player1.dx < 0) {
+      g_matches[matchNum].player1.dx += 1;
+    }
+  }
+  g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
+  g_matches[matchNum].p1 = 'a';
+  // player2 처리
+  /*
+  if (g_matches[matchNum].p2 == 0) {
+    if (g_matches[matchNum].player2.dx >= -3) {
+      g_matches[matchNum].player2.dx -= 1;
+    }
+  } 
+  else if (g_matches[matchNum].p2 == 1) {
+    if (g_matches[matchNum].player2.dx <= 3) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  } 
+  else if (g_matches[matchNum].p2 != 0 && g_matches[matchNum].p2 != 1) {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player2.dx > 0) {
+      g_matches[matchNum].player2.dx -= 1;
+    } else if (g_matches[matchNum].player2.dx < 0) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  }
+  g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
+  */
+}
+
+DWORD WINAPI timerProcessClient(LPVOID lpParam) {
+  // 타이머 생성
+  int matchNum = *(int*)lpParam;
+  delete (int*)lpParam;
   HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
   if (hTimer == NULL) {
     printf("타이머 생성 실패\n");
@@ -197,13 +243,30 @@ DWORD WINAPI clientProcess(LPVOID lpParam) {
 
     // 매치 데이터 업데이트
     EnterCriticalSection(&cs);
-    // 플레이어 좌표 이동
-    g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
-    g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
+    // 플레이어 좌표 이동   
+    updatePlayer(matchNum);
+     printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
     // 다른 데이터 업데이트 로직 추가 해야함    
+    // send 부분
+    char sendBuf[BUFSIZE];
+    int sendSize = snprintf(sendBuf, BUFSIZE, "P1_X:%d,P2_X:%d",
+                 g_matches[matchNum].player1.x, g_matches[matchNum].player2.x);
+
+    for (int i = 0; i < 2; ++i) {
+      if (g_matches[matchNum].client_sock[i] == NULL) {
+        //printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
+        continue;
+      }
+      //printf("클라이언트 %d 소켓 확인: %d\n", i, g_matches[matchNum].client_sock[i]);
+      int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+      if (retval == SOCKET_ERROR) {
+        printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
+               WSAGetLastError());
+      } else {
+        //printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
+      }
+    }
     LeaveCriticalSection(&cs);
-    //send 추가해야함
-    printf("타이머스레드 일함\n");
     // 필요에 따라 타이머 중단 조건을 추가.
   }
 
@@ -245,7 +308,6 @@ int main(int argc, char* argv[]) {
   while (1) {
     printf("서버 대기중...\n");
     addrlen = sizeof(clientaddr);
-    // 여기서 rParam 할당 해서 생성 하고 rParam값 주고
     rParam = new recvParam{};
     rParam->client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
     if (rParam->client_sock == INVALID_SOCKET) {
@@ -262,13 +324,16 @@ int main(int argc, char* argv[]) {
            ntohs(clientaddr.sin_port));
 
     if (clientCount == 0) g_matches.push_back(MATCH());
+    // 매치 구조체 초기화 해야함 
+    // 
     if (g_matches[matchCount].client_sock[clientCount] == NULL) {
       rParam->playerNum = 0;
       rParam->matchNum = matchCount;
-      g_matches[matchCount].recvThread[0] =
-          CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
+      g_matches[matchCount].client_sock[clientCount] = rParam->client_sock;
+      g_matches[matchCount].recvThread[0] = CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       clientCount++;
-      //hThread = CreateThread(NULL, 0, clientProcess, &matchCount, 0, NULL);
+      int* pMatchNum = new int(matchCount);
+      g_matches[matchCount].timerThread = CreateThread(NULL, 0, timerProcessClient, pMatchNum, 0, NULL);
     } 
     else if (g_matches[matchCount].client_sock[0] != NULL &&
                g_matches[matchCount].client_sock[1] == NULL) {
