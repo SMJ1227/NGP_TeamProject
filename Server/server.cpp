@@ -403,6 +403,7 @@ int main(int argc, char* argv[]) {
     if ((g_matches.end() - 1)->client_sock[0] == NULL) {
       rParam->playerNum = 0;
       rParam->matchNum = g_matches.size() - 1;
+      (g_matches.end() - 1)->client_sock[0] = rParam->client_sock;
       (g_matches.end() - 1)->recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       // 디버그용 출력
@@ -417,6 +418,7 @@ int main(int argc, char* argv[]) {
              (g_matches.end() - 1)->client_sock[1] == NULL) {
       rParam->playerNum = 1;
       rParam->matchNum = g_matches.size() - 1;
+      (g_matches.end() - 1)->client_sock[1] = rParam->client_sock;
       // 디버그용 출력
       printf("%d번째 매치 %번째 플레이어 스레드 생성", rParam->matchNum,
              rParam->playerNum);
