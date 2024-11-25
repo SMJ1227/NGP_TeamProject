@@ -348,14 +348,15 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
               reinterpret_cast<PlayerInfoPacket*>(
                   std::next(recv_buff.data(), sizeof(PlayerInfoPacket)));
 
-          PlayerInfoMSG* player_infoes = new PlayerInfoMSG{
-              my_player_info_packet->info, other_player_info_packet->info};
-
-          // 윈도우로 보내기
-          ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                        static_cast<std::int8_t>(PKT_CAT::PLAYER_INFO),
-                        reinterpret_cast<LPARAM>(player_infoes));
-
+          PlayerInfoMSG* player_infoes =
+              new PlayerInfoMSG{.my_player = my_player_info_packet->info,
+                                .other_player = other_player_info_packet->info};
+          {
+            // 윈도우로 보내기
+            ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                          static_cast<std::int8_t>(PKT_CAT::PLAYER_INFO),
+                          reinterpret_cast<LPARAM>(player_infoes));
+          }
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = ", return_value);
           wow.emit();
@@ -447,8 +448,8 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-    std::println(wow, "send {} = {}:{}", return_value, std::string_view{buffer},
-                 buffer.size());
+    std::println(wow, "send {} = {}:{}", return_value,
+                 std::string_view{buffer.data(), buffer.size()}, buffer.size());
     wow.emit();
 
     switch (return_value) {
@@ -670,25 +671,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
     case WM_NETWORK_INFORM: {
       using namespace game_protocol;
 
-      std::int8_t curr_cat = wParam;
+      std::int8_t curr_cat = LOBYTE(wParam);
       // recv에서 보낸 정보 처리
       switch (static_cast<PKT_CAT>(curr_cat)) {
         case PKT_CAT::PLAYER_INFO: {
-          PlayerInfoMSG* player_infoes =
-              reinterpret_cast<PlayerInfoMSG*>(lParam);
+          {
+            PlayerInfoMSG* player_infoes =
+                reinterpret_cast<PlayerInfoMSG*>(lParam);
 
-          g_player.x = player_infoes->my_player.x;
-          g_player.y = player_infoes->my_player.y;
+            g_player.x = player_infoes->my_player.x;
+            g_player.y = player_infoes->my_player.y;
 
-          otherPlayer.x = player_infoes->other_player.x;
-          otherPlayer.y = player_infoes->other_player.y;
+            otherPlayer.x = player_infoes->other_player.x;
+            otherPlayer.y = player_infoes->other_player.y;
+          }
+
 #ifndef NDEBUG
           std::println(
               wow, "player window get my x,y : ({}, {}), other x,y : ({}, {})",
               g_player.x, g_player.y, otherPlayer.x, otherPlayer.y);
 #endif  // !NDEBUG
 
-          delete player_infoes;
           break;
         }
         case PKT_CAT::CHANGE_MAP: {
