@@ -1,8 +1,56 @@
+/*** 여기서부터 이 책의 모든 예제에서 공통으로 포함하여 사용하는 코드이다. ***/
+
+#define _CRT_SECURE_NO_WARNINGS  // 구형 C 함수 사용 시 경고 끄기
+#define _WINSOCK_DEPRECATED_NO_WARNINGS  // 구형 소켓 API 사용 시 경고 끄기
+
+#include <stdio.h>     // printf(), ...
+#include <stdlib.h>    // exit(), ...
+#include <string.h>    // strncpy(), ...
+#include <tchar.h>     // _T(), ...
+#include <winsock2.h>  // 윈속2 메인 헤더
+#include <ws2tcpip.h>  // 윈속2 확장 헤더
+
+#pragma comment(lib, "ws2_32")  // ws2_32.lib 링크
+
+// 소켓 함수 오류 출력 후 종료
+void err_quit(const char* msg) {
+  LPVOID lpMsgBuf;
+  FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                 NULL, WSAGetLastError(),
+                 MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (char*)&lpMsgBuf, 0,
+                 NULL);
+  MessageBoxA(NULL, (const char*)lpMsgBuf, msg, MB_ICONERROR);
+  LocalFree(lpMsgBuf);
+  exit(1);
+}
+
+// 소켓 함수 오류 출력
+void err_display(const char* msg) {
+  LPVOID lpMsgBuf;
+  FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                 NULL, WSAGetLastError(),
+                 MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (char*)&lpMsgBuf, 0,
+                 NULL);
+  printf("[%s] %s\n", msg, (char*)lpMsgBuf);
+  LocalFree(lpMsgBuf);
+}
+
+// 소켓 함수 오류 출력
+void err_display(int errcode) {
+  LPVOID lpMsgBuf;
+  FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                 NULL, errcode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                 (char*)&lpMsgBuf, 0, NULL);
+  printf("[오류] %s\n", (char*)lpMsgBuf);
+  LocalFree(lpMsgBuf);
+}
+
+/*** 여기까지가 이 책의 모든 예제에서 공통으로 포함하여 사용하는 코드이다. ***/
+/*** 2장 이후의 예제들은 Common.h를 포함하는 방식으로 이 코드를 사용한다.  ***/
+
 #define SERVERPORT 9000
 #define BUFSIZE 512
 
-#include "common.h"
-#include "map.h"
 #include <windows.h>  // windows 관련 함수 포함
 #include <iostream>
 #include <vector>
@@ -22,7 +70,11 @@ typedef struct Player {
   bool damaged;
   std::string face;  // face: left, right
   bool EnhancedJumpPower;
-  bool spaceKeyReleased = true;
+};
+
+typedef struct SendPlayer {
+  int x, y;
+  char acting;
 };
 
 typedef struct Item {
@@ -46,24 +98,14 @@ struct recvParam {
   char playerNum = NULL;
 };
 
-typedef struct sendParam {
-  int x, y;
-  char acting = 'a';
-};
-
 typedef struct MATCH {
   SOCKET client_sock[2]{NULL, NULL};
   HANDLE recvThread[2]{NULL, NULL};
   HANDLE timerThread;
   Player player1;
-  sendParam SPlayer1;
+  SendPlayer SPlayer1;
   Player player2;
-<<<<<<< Updated upstream
   SendPlayer SPlayer2;
-=======
-  sendParam SPlayer2;
-  char matchNum = 0;
->>>>>>> Stashed changes
   char p1 = 'a';
   char p2 = 'a';
   int mapNum;
@@ -74,45 +116,6 @@ typedef struct MATCH {
 };
 std::vector<MATCH> g_matches;
 
-<<<<<<< Updated upstream
-=======
-// 충돌처리 함수
-void updatePlayerD(int matchNum);
-// applyGravity();
-void movePlayer(int matchNum); // 플레이어 이동
-// moveBullets();
-// shootInterval++
-// 아이템 재생성 코드
-// 총알 재생성 코드
-// 포탈 충돌처리
-// 오브젝트 충돌처리
-void updateSendParam(int matchNum);
-void CheckCollisions(int matchNum);
-void CheckEnemyPlayerCollisions(int matchNum);
-void CheckItemPlayerCollisions(int matchNum);
-void CheckPlayerBulletCollisions(int matchNum);
-
-// 매치를 삭제하는 함수
-void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
-  // 디버그용 출력
-  printf("%d매치의 %d번 플레이어의 연결이 종료됐습니다\n", matchNum, playerNum);
-
-  std::vector<MATCH>::iterator iter = g_matches.begin();
-  for (int i = 0; i < matchNum; i++) iter++;
-  g_matches.erase(std::remove(g_matches.begin(), g_matches.end(), *iter),
-                  g_matches.end());
-  // 디버그용 출력
-  printf("매치 원소 삭제\n");
-
-  for (int i = 0; i < g_matches.size(); i++) {
-    g_matches[i].matchNum = i;
-  }
-
-  // 바꾼 matchNum을 다른 스레드에도 적용시켜야함
-  // -> 각 recv스레드에서 반복문이 시작될 때 자신의 매치 번호를 검사한다
-}
-
->>>>>>> Stashed changes
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
   recvParam* param = (recvParam*)arg;
@@ -170,6 +173,61 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   return 0;
 }
 
+void updatePlayer(int matchNum) {
+  // player1 처리
+  if (g_matches[matchNum].p1 == '0') {
+    if (g_matches[matchNum].player1.dx >= -3) {
+      g_matches[matchNum].player1.dx -= 1;
+    }
+  } 
+  else if (g_matches[matchNum].p1 == '1') {
+    if (g_matches[matchNum].player1.dx <= 3) {
+      g_matches[matchNum].player1.dx += 1;
+    }
+  } 
+  else if (g_matches[matchNum].p1 != '0' && g_matches[matchNum].p1 != '1') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player1.dx > 0) {
+      g_matches[matchNum].player1.dx -= 1;
+    } else if (g_matches[matchNum].player1.dx < 0) {
+      g_matches[matchNum].player1.dx += 1;
+    }
+  }
+  g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
+  g_matches[matchNum].p1 = 'a';
+  // player2 처리
+  if (g_matches[matchNum].p2 == 0) {
+    if (g_matches[matchNum].player2.dx >= -3) {
+      g_matches[matchNum].player2.dx -= 1;
+    }
+  } 
+  else if (g_matches[matchNum].p2 == 1) {
+    if (g_matches[matchNum].player2.dx <= 3) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  } 
+  else if (g_matches[matchNum].p2 != 0 && g_matches[matchNum].p2 != 1) {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player2.dx > 0) {
+      g_matches[matchNum].player2.dx -= 1;
+    } else if (g_matches[matchNum].player2.dx < 0) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  }
+  g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
+}
+
+void updateSP(int matchNum) {
+  //player 1
+    g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
+    g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
+    g_matches[matchNum].SPlayer1.acting = 0; // 추후 충돌처리 이후 추가
+  //player 2
+    g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
+    g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
+    g_matches[matchNum].SPlayer2.acting = 0;  // 추후 충돌처리 이후 추가
+}
+
 DWORD WINAPI timerProcessClient(LPVOID lpParam) {
   // 타이머 생성
   int matchNum = *(int*)lpParam;
@@ -196,41 +254,15 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
     // 매치 데이터 업데이트
     EnterCriticalSection(&cs);
-<<<<<<< Updated upstream
     // 플레이어 좌표 이동
     updatePlayer(matchNum);
-=======
-
-    // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
-    // 번호가 일치하는 지 비교한다, 다르다면 감소
-    while (!(matchNum < 0) && matchNum < g_matches.size() &&
-           g_matches[matchNum].matchNum != matchNum) {
-      // 디버그용 출력
-      printf(
-          "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
-          "않음, matchNum감소\n",
-          matchNum, g_matches[matchNum].matchNum);
-      matchNum--;
-    }
-
-    // 플레이어 dx dy 변화
-    updatePlayerD(matchNum);
->>>>>>> Stashed changes
     // printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
-    // 플레이어 이동
-    // movePlayer(matchNum);
-    // moveBullets();
-    // shootInterval++
-    // 아이템 재생성 코드
-    // 총알 재생성 코드
-    // 포탈 충돌처리
-    // 오브젝트 충돌처리
-    // sendParam업데이트
-    updateSendParam(matchNum);
+    updateSP(matchNum);
     // printf("%d, %d\r", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
     // send 부분
     char sendBuf[BUFSIZE];
-    int sendSize = sizeof(sendParam);
+    int sendSize = snprintf(sendBuf, BUFSIZE, "%d, %d, %c", g_matches[matchNum].SPlayer1.x,
+        g_matches[matchNum].SPlayer2.x, g_matches[matchNum].SPlayer2.acting);
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
@@ -238,17 +270,12 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         continue;
       }
       //printf("클라이언트 %d 소켓 확인: %d\n", i, g_matches[matchNum].client_sock[i]);
-      if (i == 0) {
-        memcpy(sendBuf, &g_matches[matchNum].SPlayer1, sizeof(sendParam));
-      } else if (i == 1) {
-        memcpy(sendBuf, &g_matches[matchNum].SPlayer2, sizeof(sendParam));
-      }
       int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
       if (retval == SOCKET_ERROR) {
         printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
                WSAGetLastError());
       } else {
-        printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\r", i, retval);
+        //printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
       }
     }
     LeaveCriticalSection(&cs);
@@ -338,64 +365,3 @@ int main(int argc, char* argv[]) {
   WSACleanup();
   return 0;
 }
-
-void updatePlayerD(int matchNum) {
-  // player1 처리
-  if (g_matches[matchNum].p1 == '0') {
-    if (g_matches[matchNum].player1.dx >= -3) {
-      g_matches[matchNum].player1.dx -= 1;
-    }
-  } else if (g_matches[matchNum].p1 == '1') {
-    if (g_matches[matchNum].player1.dx <= 3) {
-      g_matches[matchNum].player1.dx += 1;
-    }
-  } else if (g_matches[matchNum].p1 != '0' && g_matches[matchNum].p1 != '1') {
-    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
-    if (g_matches[matchNum].player1.dx > 0) {
-      g_matches[matchNum].player1.dx -= 1;
-    } else if (g_matches[matchNum].player1.dx < 0) {
-      g_matches[matchNum].player1.dx += 1;
-    }
-  }
-  g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
-  g_matches[matchNum].p1 = 'a';
-  // player2 처리
-  if (g_matches[matchNum].p2 == 0) {
-    if (g_matches[matchNum].player2.dx >= -3) {
-      g_matches[matchNum].player2.dx -= 1;
-    }
-  } else if (g_matches[matchNum].p2 == 1) {
-    if (g_matches[matchNum].player2.dx <= 3) {
-      g_matches[matchNum].player2.dx += 1;
-    }
-  } else if (g_matches[matchNum].p2 != 0 && g_matches[matchNum].p2 != 1) {
-    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
-    if (g_matches[matchNum].player2.dx > 0) {
-      g_matches[matchNum].player2.dx -= 1;
-    } else if (g_matches[matchNum].player2.dx < 0) {
-      g_matches[matchNum].player2.dx += 1;
-    }
-  }
-  g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
-}
-
-void updateSendParam(int matchNum) {
-  // player 1
-  g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
-  g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
-  g_matches[matchNum].SPlayer1.acting = 0;  // 추후 충돌처리 이후 추가
-                                            // player 2
-  g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
-  g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
-  g_matches[matchNum].SPlayer2.acting = 0;  // 추후 충돌처리 이후 추가
-}
-
-void CheckCollisions(int matchNum) {
-  CheckEnemyPlayerCollisions(matchNum);
-  CheckItemPlayerCollisions(matchNum);
-  CheckPlayerBulletCollisions(matchNum);
-  //CheckPlayersCollisions(matchNum);
-}
-void CheckEnemyPlayerCollisions(int matchNum) {}
-void CheckItemPlayerCollisions(int matchNum) {}
-void CheckPlayerBulletCollisions(int matchNum) {}
