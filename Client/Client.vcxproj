@@ -143,6 +143,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
     <Image Include="Cannon.png" />
     <Image Include="clear.png" />
     <Image Include="desertbg_sand.png" />
@@ -186,9 +189,6 @@
     <ClInclude Include="network_util.hpp" />
     <ClInclude Include="protocol.hpp" />
     <ClInclude Include="resource.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

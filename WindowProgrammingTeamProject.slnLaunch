@@ -11,18 +11,5 @@
         "Action": "Start"
       }
     ]
-  },
-  {
-    "Name": "서버-클라이언트 통신",
-    "Projects": [
-      {
-        "Path": "Server\\Server.vcxproj",
-        "Action": "Start"
-      },
-      {
-        "Path": "Client\\Client.vcxproj",
-        "Action": "Start"
-      }
-    ]
   }
 ]

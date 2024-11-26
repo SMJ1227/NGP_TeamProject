@@ -9,7 +9,6 @@
 #include <array>
 #include <fstream>
 #include <iostream>
-#include <span>
 #include <string>
 #include <string_view>
 #include <syncstream>
@@ -181,24 +180,25 @@ WSADATA g_wsa;
 
 HANDLE g_hSendThread{};
 HANDLE g_hRecvThread{};
-UINT constexpr WM_NETWORK_INFORM = WM_USER + 1;
 
 // 전역 변수
 struct Player {
   int x, y;
-  bool isWarking;
+  int dx, dy;
+  int jumpSpeed;
   bool isCharging;
   bool isJumping;
-  bool isFalling;
   bool isSliding;
+  bool slip;  // 미끄러지는 동안 계속 true
   bool damaged;
-  bool face;
+  string face;  // face: left, right
   bool EnhancedJumpPower;
 } g_player;
-Player otherPlayer;
 
 struct Item {
   int x, y;
+  int type;
+  int interval;
   bool disable;
 };
 vector<Item> g_items;
@@ -214,6 +214,7 @@ struct Bullet {
 };
 vector<Bullet> g_bullets;
 
+void ProcessKeyboard();
 void DrawSnowBg(HDC hDC);
 void DrawDesertBg(HDC hDC);
 void DrawSnowTile(HDC hDC);
@@ -221,9 +222,15 @@ void DrawDesertTile(HDC hDC);
 void DrawForestBg(HDC hDC);
 void DrawForestTile(HDC hDC);
 void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]);
-void InitPlayer(Player& player);
-void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y,
-                const int& width, const int& height);
+void InitPlayer();
+void MovePlayer(int map[MAP_HEIGHT][MAP_WIDTH]);
+void DrawSprite(HDC hDC, const int& x, const int& y, const int& width,
+                const int& height);
+void ApplyGravity();
+bool IsColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
+bool IsSlopeGoRightColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
+bool IsSlopeGoLeftColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
+bool IsNextColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y);
 void InitItems(int map[MAP_HEIGHT][MAP_WIDTH]);
 void GenerateItem(int x, int y, int num);
 void DrawItem(HDC hDC);
@@ -232,8 +239,14 @@ void InitEnemy(int map[MAP_HEIGHT][MAP_WIDTH]);
 void GenerateEnemy(int x, int y);
 void DrawEnemies(HDC hDC);
 void DeleteAllEnemies();
+void ShootBullet();
+void MoveBullets();
 void DrawBullets(HDC hDC);
 void DeleteAllBullets();
+void CheckCollisions();
+void CheckEnemyPlayerCollisions();
+void CheckItemPlayerCollisions();
+void CheckPlayerBulletCollisions();
 
 // WinMain 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -290,31 +303,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 std::ofstream clientlog{"client_send.log"};
 std::osyncstream wow{clientlog};
 
-struct RecvClientParam {
-  SOCKET recv_socket;
-  HWND window_handle;
-};
-struct PlayerInfoMSG {
-  game_protocol::PlayerInfo my_player, other_player;
-};
-
 DWORD WINAPI RecvClient(LPVOID lp_param) {
-  auto [server_sock, window_handle] =
-      *(reinterpret_cast<RecvClientParam*>(lp_param));
-
-  delete reinterpret_cast<RecvClientParam*>(lp_param);
-
+  SOCKET server_sock = (SOCKET)lp_param;
   int return_value{};
   int constexpr BUFF_SIZE = 100;
   std::array<char, BUFF_SIZE> recv_buff{};
-  int recved_buffer_size{};
   using namespace game_protocol;
-
+  PacketHeader header_buffer{};
   while (true) {
-    // 데이터 받기
-    return_value =
-        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size() - recved_buffer_size, 0);
+    return_value = recv(server_sock, reinterpret_cast<char*>(&header_buffer),
+                        sizeof(PacketHeader), MSG_WAITALL);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -327,82 +325,29 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
         return -1;
       }
     }
-    // 받은 데이터 크기 반영
-    recved_buffer_size += return_value;
-
-    for (bool unfinished = true; unfinished;) {
-      // 받은 데이터 처리
-      switch (static_cast<PKT_CAT>(recv_buff[0])) {
-        case PKT_CAT::PLAYER_INFO: {
-          // 데이터를 다 받았는지 확인
-          if (sizeof(PlayerInfoPacket) * 2 > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
-
-          // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          PlayerInfoPacket* my_player_info_packet =
-              reinterpret_cast<PlayerInfoPacket*>(recv_buff.data());
-
-          PlayerInfoPacket* other_player_info_packet =
-              reinterpret_cast<PlayerInfoPacket*>(
-                  std::next(recv_buff.data(), sizeof(PlayerInfoPacket)));
-
-          PlayerInfoMSG* player_infoes =
-              new PlayerInfoMSG{.my_player = my_player_info_packet->info,
-                                .other_player = other_player_info_packet->info};
-          {
-            // 윈도우로 보내기
-            ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                          static_cast<std::int8_t>(PKT_CAT::PLAYER_INFO),
-                          reinterpret_cast<LPARAM>(player_infoes));
-          }
-#ifndef NDEBUG
-          std::println(wow, "PLAYER_INFO recv  {} = ", return_value);
-          wow.emit();
-#endif  // !NDEBUG
-
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), sizeof(PlayerInfoPacket) * 2),
-                      recved_buffer_size - sizeof(PlayerInfoPacket) * 2);
-          recved_buffer_size -= sizeof(PlayerInfoPacket) * 2;
-          break;
-        }
-        case PKT_CAT::CHANGE_MAP: {
-          // 데이터 다 받았는지 확인
-          if (sizeof(MapInfoPacket) > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
-
-          // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
-          MapInfoPacket* map_info_packet =
-              reinterpret_cast<MapInfoPacket*>(recv_buff.data());
-
-          // 윈도우로 보내기
-          ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                        static_cast<std::int8_t>(PKT_CAT::CHANGE_MAP),
-                        (LPARAM)map_info_packet->info.mapNum);
-
-#ifndef NDEBUG
-          std::println(wow, "MapInfo recv  {} = {}", return_value,
-                       map_info_packet->info.mapNum);
-          wow.emit();
-#endif  // !NDEBUG
-
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), sizeof(MapInfoPacket)),
-                      recved_buffer_size - sizeof(MapInfoPacket));
-          recved_buffer_size -= sizeof(MapInfoPacket);
-          break;
-        }
-        default: {
-          err_display(" : recv buffer handle error");
-          break;
-        }
+    switch (static_cast<PKT_CAT>(header_buffer.header)) {
+      case PKT_CAT::PLAYER_INFO: {
+        return_value = recv(server_sock, recv_buff.data(), sizeof(PlayerInfo),
+                            MSG_WAITALL);
+        auto player = PlayerInfo{};
+        std::memcpy(&player, recv_buff.data(), sizeof(PlayerInfo));
+        std::println(wow, "PLAYER_INFO recv  {} = {}:{}", return_value,
+                     player.x, player.y);
+        wow.emit();
+        break;
       }
+      case PKT_CAT::CHANGE_MAP: {
+        return_value =
+            recv(server_sock, recv_buff.data(), sizeof(MapInfo), MSG_WAITALL);
+        auto change_map = MapInfo{};
+        std::memcpy(&change_map, recv_buff.data(), sizeof(MapInfo));
+        std::println(wow, "MapInfo recv  {} = {}", return_value,
+                     change_map.mapNum);
+        wow.emit();
+        break;
+      }
+      default:
+        break;
     }
   }
   return 0;
@@ -411,34 +356,23 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 DWORD WINAPI SendClient(LPVOID lp_param) {
   SOCKET server_sock = (SOCKET)lp_param;
   int return_value{};
-
-  USHORT left_check_value{};
-  USHORT right_check_value{};
-  USHORT space_check_value{};
-
   bool is_pressed_left{false};
   bool is_pressed_right{false};
   bool is_pressed_space{false};
-  bool was_pressed_space{false};
 
   std::vector<char> buffer{};
   buffer.reserve(3);
 
   while (true) {
-    // �Է� ���� Ȯ��
-    left_check_value = GetAsyncKeyState(VK_LEFT);
-    right_check_value = GetAsyncKeyState(VK_RIGHT);
-    space_check_value = GetAsyncKeyState(VK_SPACE);
+    // 입력 여부 확인
+    is_pressed_left = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+    is_pressed_right = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+    is_pressed_space = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
     // 버퍼 정리
     buffer.clear();
 
     // 유효 입력 처리
-
-    // 좌우 처리
-    is_pressed_left = (left_check_value & 0x8000) != 0;
-    is_pressed_right = (right_check_value & 0x8000) != 0;
-
     if (!(is_pressed_left && is_pressed_right)) {
       if (is_pressed_left) {
         buffer.push_back('0');
@@ -447,33 +381,8 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
         buffer.push_back('1');
       }
     }
-
-    // 
-    is_pressed_space = (space_check_value & 0x8000) != 0;
-
-    if (is_pressed_space && !was_pressed_space) {
+    if (is_pressed_space) {
       buffer.push_back(' ');
-      was_pressed_space = true;
-
-#ifndef NDEBUG
-      std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
-#endif  // NDEBUG
-    } else if (!is_pressed_space && was_pressed_space) {
-      buffer.push_back('\b');
-      was_pressed_space = false;
-
-#ifndef NDEBUG
-      std::println(wow,
-                   "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
-#endif  // NDEBUG
     }
 
     // 눌린 것이 없으면 넘김
@@ -484,6 +393,9 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
+    std::println(wow, "send {} = {}:{}", return_value, std::string_view{buffer},
+                 buffer.size());
+    wow.emit();
 
     switch (return_value) {
       case SOCKET_ERROR: {
@@ -521,12 +433,9 @@ static int map[MAP_HEIGHT][MAP_WIDTH];
 static int shootInterval = 0;
 static int spriteX = 0;
 static int spriteY = 0;
-static int spriteX2 = 0;
-static int spriteY2 = 0;
 static int spriteWidth = 30;
 static int spriteHeight = 0;
-static int spriteHeight2 = 0;
-void Update();
+
 // 타이머 콜백
 void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   switch (idEvent) {
@@ -560,30 +469,94 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
         g_hSendThread =
             CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
 
-        auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
-                                              .window_handle = hWnd};
-        g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
-        recvParam = nullptr;
+        g_hRecvThread =
+            CreateThread(NULL, 0, RecvClient, (LPVOID)server_sock, 0, NULL);
 
         map_num = 1;
-        InitPlayer(g_player);
-        // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
-        // warking으로 플레이어 출력되는지 확인용
-        spriteX = 0;
-        spriteY = 24;
-        spriteHeight = 24;
-        // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
-        // warking으로 플레이어 출력되는지 확인용
+        InitPlayer();
         InitMap(map, map0);
         InitEnemy(map);
         InitItems(map);
         KillTimer(hWnd, 2);
-        SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
       }
+
       break;
     }
-    case 3: {
-      Update();
+    case 1: {
+      ProcessKeyboard();
+      ApplyGravity();
+      MovePlayer(map);
+      MoveBullets();
+      shootInterval++;
+      for (auto& item : g_items) {
+        if (item.interval <= 0) {
+          item.disable = false;
+        } else {
+          item.interval--;
+        }
+      }
+      if (shootInterval > 120) {
+        ShootBullet();
+        shootInterval = 0;
+      }
+      if (IsNextColliding(map, g_player.x, g_player.y) == true) {
+        if (map_num == 1)
+          InitMap(map, map1);
+        else if (map_num == 2)
+          InitMap(map, map2);
+        InitPlayer();
+        DeleteAllEnemies();
+        DeleteAllBullets();
+        DeleteAllItems();
+        InitEnemy(map);
+        InitItems(map);
+        if (map_num++ == 4) KillTimer(hWnd, 1);
+      }
+
+      CheckCollisions();
+      if (g_player.dx < 0)
+        g_player.face = "left";
+      else if (g_player.dx > 0)
+        g_player.face = "right";
+      if (g_player.dy == 0 && g_player.jumpSpeed == 0 && g_player.dx != 0) {
+        if ((spriteX += spriteWidth) > 230) {
+          spriteX = 0;
+        }
+        spriteY = 24;
+        spriteHeight = 24;
+
+      } else if (g_player.dy == 0 && g_player.jumpSpeed < 0) {
+        spriteX = 0;
+        spriteY = 116;
+        spriteHeight = 22;
+        if (g_player.jumpSpeed == -20) {
+          spriteX = 30;
+        }
+      } else if (g_player.dy < 0) {
+        if ((spriteX += spriteWidth) > 119) {
+          spriteX = 0;
+        }
+        spriteY = 48;
+        spriteHeight = 29;
+      } else if (g_player.dy > 0 && g_player.isSliding == false) {
+        if ((spriteX += spriteWidth) > 59) {
+          spriteX = 0;
+        }
+        spriteY = 77;
+        spriteHeight = 39;
+      } else if (g_player.dy > 0 && g_player.isSliding == true) {
+        if ((spriteX += spriteWidth) > 29) {
+          spriteX = 0;
+        }
+        spriteY = 138;
+        spriteHeight = 25;
+      } else {
+        if ((spriteX += spriteWidth) > 230) {
+          spriteX = 0;
+        }
+        spriteY = 0;
+        spriteHeight = 24;
+      }
       break;
     }
   }
@@ -604,7 +577,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
   static int playerFrameIndex = 0;
 
   switch (message) {
-    case WM_CREATE: {
+    case WM_CREATE:
       Snowtile.Load(L"snowtile.png");
       Snowbg.Load(L"SnowBg.png");
       cannon.Load(L"Cannon.png");
@@ -621,10 +594,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       spriteSheetMask =
           (HBITMAP)LoadBitmap(g_hInst, MAKEINTRESOURCE(PLAYER_SPRITE_MASK));
 
+      SetTimer(hWnd, 1, 1000 / 60, (TIMERPROC)TimerProc);
       SetTimer(hWnd, 2, 1000 / 60, (TIMERPROC)TimerProc);
       break;
-    }
-    case WM_CHAR: {
+    case WM_CHAR:
       switch (wParam) {
         case 'Q':
         case 'q':
@@ -632,7 +605,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           break;
       }
       break;
-    }
     case WM_PAINT: {
       hDC = BeginPaint(hWnd, &ps);
       GetClientRect(hWnd, &rt);
@@ -649,27 +621,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawSnowTile(mDC);
         DrawEnemies(mDC);
         DrawBullets(mDC);
-        DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
-        // spriteHeight);       // 플레이어2 출력
+        DrawSprite(mDC, spriteX, spriteY, spriteWidth, spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 2) {
         DrawDesertBg(mDC);
         DrawDesertTile(mDC);
         DrawEnemies(mDC);
         DrawBullets(mDC);
-        DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
-        // spriteHeight);
+        DrawSprite(mDC, spriteX, spriteY, spriteWidth, spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 3) {
         DrawForestBg(mDC);
         DrawForestTile(mDC);
         DrawEnemies(mDC);
         DrawBullets(mDC);
-        DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
-        // spriteHeight);
+        DrawSprite(mDC, spriteX, spriteY, spriteWidth, spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 4) {
         endImage.Draw(mDC, BOARD_WIDTH - GRID * 13, BOARD_HEIGHT - GRID * 17,
@@ -707,50 +673,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       EndPaint(hWnd, &ps);
       break;
     }
-    case WM_NETWORK_INFORM: {
-      using namespace game_protocol;
-
-      std::int8_t curr_cat = LOBYTE(wParam);
-      // recv에서 보낸 정보 처리
-      switch (static_cast<PKT_CAT>(curr_cat)) {
-        case PKT_CAT::PLAYER_INFO: {
-          {
-            PlayerInfoMSG* player_infoes =
-                reinterpret_cast<PlayerInfoMSG*>(lParam);
-
-            g_player.x = player_infoes->my_player.x;
-            g_player.y = player_infoes->my_player.y;
-
-            otherPlayer.x = player_infoes->other_player.x;
-            otherPlayer.y = player_infoes->other_player.y;
-          }
-
-#ifndef NDEBUG
-          std::println(
-              wow, "player window get my x,y : ({}, {}), other x,y : ({}, {})",
-              g_player.x, g_player.y, otherPlayer.x, otherPlayer.y);
-          wow.emit();
-          wow.flush();
-#endif  // !NDEBUG
-
-          break;
-        }
-        case PKT_CAT::CHANGE_MAP: {
-          // 맵 변경
-          int mapNum = LOWORD(lParam);
-
-#ifndef NDEBUG
-          std::println(wow, "mapNum window get {}", mapNum);
-          wow.emit();
-          wow.flush();
-#endif  // !NDEBUG
-          break;
-        }
-      }
-
-      break;
-    }
-    case WM_DESTROY: {
+    case WM_DESTROY:
       Snowtile.Destroy();
       Snowbg.Destroy();
       cannon.Destroy();
@@ -768,16 +691,73 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       // KillTimer(hWnd, 2);
       PostQuitMessage(0);
       break;
-    }
-    default: {
+    default:
       return DefWindowProc(hWnd, message, wParam, lParam);
-    }
   }
   return 0;
 }
 
 // 키입력
 bool spaceKeyReleased = true;
+void ProcessKeyboard() {
+  // 키 처리
+  if (GetAsyncKeyState(VK_LEFT) & 0x8000) {  // 키가 눌린 상태
+    if (!g_player.isCharging && !g_player.isSliding) {
+      if (g_player.damaged) {
+        return;
+      }
+      g_player.face = "left";
+      if (g_player.dx >= -3) {
+        g_player.dx += -1;
+      }
+    }
+  } else if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {  // 오른쪽 키 처리
+    if (!g_player.isCharging && !g_player.isSliding) {
+      if (g_player.damaged) {
+        return;
+      }
+      g_player.face = "right";
+      if (g_player.dx <= 3) {
+        g_player.dx += 1;
+      }
+    }
+  } else {
+    if (!g_player.damaged && !g_player.isSliding) {
+      if (g_player.dx > 0) {
+        g_player.dx -= 1;  // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+      } else if (g_player.dx < 0) {
+        g_player.dx += 1;  // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+      }
+    }
+  }
+
+  // 스페이스 키 처리
+  if (GetAsyncKeyState(VK_SPACE) & 0x8000) {  // 스페이스 키가 눌린 상태
+    spaceKeyReleased = false;
+    if (!g_player.isJumping && g_player.jumpSpeed > -20) {
+      if (g_player.damaged) {
+        g_player.damaged = false;
+      }
+      g_player.isCharging = true;
+      g_player.dx = 0;
+      g_player.jumpSpeed -= 1;
+      if (g_player.EnhancedJumpPower == 1) {
+        g_player.jumpSpeed = -20;
+      }
+    }
+  } else {  // 스페이스 키가 눌리지 않은 상태
+    if (!spaceKeyReleased && g_player.isCharging) {
+      g_player.dy = g_player.jumpSpeed;
+      g_player.jumpSpeed = 0;
+      g_player.isCharging = false;
+      g_player.isJumping = true;
+      if (g_player.EnhancedJumpPower == 1) {
+        g_player.EnhancedJumpPower = 0;
+      }
+      spaceKeyReleased = true;
+    }
+  }
+}
 
 // 맵
 void DrawSnowTile(HDC hDC) {
@@ -964,36 +944,156 @@ void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]) {
   }
 }
 // 플레이어
-void InitPlayer(Player& player) {
-  player.x = (MAP_WIDTH - 7) * GRID;
-  player.y = (MAP_HEIGHT - 4) * GRID;
-  player.isCharging = false;
-  player.isJumping = false;
-  player.damaged = false;
-  player.face = 0;
+void InitPlayer() {
+  g_player.x = (MAP_WIDTH - 7) * GRID;
+  g_player.y = (MAP_HEIGHT - 4) * GRID;
+  g_player.dx = 0;
+  g_player.dy = 0;
+  g_player.jumpSpeed = 0;
+  g_player.isCharging = false;
+  g_player.isJumping = false;
+  g_player.damaged = false;
+  g_player.face = "left";
 }
 
-void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y,
-                const int& width, const int& height) {
+void MovePlayer(int map[MAP_HEIGHT][MAP_WIDTH]) {
+  int newX = g_player.x + g_player.dx;
+  int newY = g_player.y + g_player.dy;
+
+  bool isVerticalCollision = IsColliding(map, g_player.x, newY);
+  bool isHorizontalCollision = IsColliding(map, newX, g_player.y);
+  bool isSlopeGoRightCollision =
+      IsSlopeGoRightColliding(map, g_player.x, g_player.y);
+  bool isSlopeGoLeftCollision =
+      IsSlopeGoLeftColliding(map, g_player.x, g_player.y);
+
+  // 수직 충돌 처리
+  if (!isVerticalCollision) {
+    g_player.y = newY;
+    if (!g_player.EnhancedJumpPower) {
+      g_player.isJumping = true;
+    }
+  } else {
+    // 바닥 충돌 시 y축 위치 보정
+    if (g_player.dy > 0) {
+      while (!IsColliding(map, g_player.x, g_player.y + 1)) {
+        g_player.y += 1;
+      }
+    }
+    g_player.dy = 0;  // 충돌 후 y축 속도 초기화
+    g_player.isJumping = false;
+    g_player.isSliding = false;
+  }
+
+  // 수평 충돌 처리
+  if (!isHorizontalCollision) {
+    g_player.x = newX;
+  } else {
+    g_player.dx = 0;  // 충돌 후 x축 속도 초기화
+  }
+
+  if (isSlopeGoRightCollision) {
+    g_player.isSliding = true;
+
+    g_player.dy = 1;  // 경사면 위에서 미끄러짐 속도
+    g_player.dx = 3;  // 오른쪽 아래로 미끄러짐
+    newX = g_player.x + g_player.dx;
+    newY = g_player.y + g_player.dy;
+    g_player.x = newX;
+    g_player.y = newY;
+  }
+
+  if (isSlopeGoLeftCollision) {
+    g_player.isSliding = true;
+
+    g_player.dy = 1;   // 경사면 위에서 미끄러짐 속도
+    g_player.dx = -3;  // 오른쪽 아래로 미끄러짐
+    newX = g_player.x + g_player.dx;
+    newY = g_player.y + g_player.dy;
+    g_player.x = newX;
+    g_player.y = newY;
+  }
+}
+
+void DrawSprite(HDC hDC, const int& x, const int& y, const int& width,
+                const int& height) {
   HDC hmemDC = CreateCompatibleDC(hDC);
   HBITMAP oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheetMask);
-  if (player.face == 0) {
-    StretchBlt(hDC, player.x - PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2,
+  if (g_player.face == "left") {
+    StretchBlt(hDC, g_player.x - PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height, SRCAND);
     oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheet);
-    StretchBlt(hDC, player.x - PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2,
+    StretchBlt(hDC, g_player.x - PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height, SRCPAINT);
     SelectObject(hmemDC, oldBitmap);
-  } else if (player.face == 1) {
-    StretchBlt(hDC, player.x + PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2,
+  } else if (g_player.face == "right") {
+    StretchBlt(hDC, g_player.x + PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                -PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height, SRCAND);
     oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheet);
-    StretchBlt(hDC, player.x + PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2,
+    StretchBlt(hDC, g_player.x + PLAYER_SIZE / 2, g_player.y - PLAYER_SIZE / 2,
                -PLAYER_SIZE, PLAYER_SIZE, hmemDC, x, y, width, height,
                SRCPAINT);
     SelectObject(hmemDC, oldBitmap);
   }
   DeleteDC(hmemDC);
+}
+
+void ApplyGravity() {
+  if (g_player.dy < 20) {
+    g_player.dy += GRAVITY;  // 중력 적용
+  }
+}
+
+bool IsColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int gridX = x / GRID;
+  int gridY = y / GRID;
+
+  if (gridX < 0 || gridX >= MAP_WIDTH || gridY < 0 || gridY >= MAP_HEIGHT) {
+    return true;
+  }
+
+  if (map[gridY][gridX] == 0) {
+    return true;
+  }
+  return false;
+}
+
+bool IsSlopeGoRightColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int leftX = (x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  // 충돌 감지
+  if (map[bottomY][leftX] == 2 || map[bottomY][rightX] == 2) {
+    return true;
+  }
+  return false;
+}
+
+bool IsSlopeGoLeftColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int leftX = (x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  // 충돌 감지
+  if (map[bottomY][leftX] == 3 || map[bottomY][rightX] == 3) {
+    return true;
+  }
+  return false;
+}
+
+bool IsNextColliding(int map[MAP_HEIGHT][MAP_WIDTH], int x, int y) {
+  int leftX = (x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  if (map[topY][leftX] == 6 || map[topY][rightX] == 6) {
+    return true;
+  }
+  return false;
 }
 
 // 아이템
@@ -1011,6 +1111,8 @@ void GenerateItem(int x, int y, int num) {
   Item newItem;
   newItem.x = x;
   newItem.y = y;
+  newItem.type = num;
+  newItem.interval = 1;
   newItem.disable = true;
   g_items.push_back(newItem);
 }
@@ -1051,6 +1153,29 @@ void DrawEnemies(HDC hDC) {
 
 void DeleteAllEnemies() { g_enemies.clear(); }
 
+void ShootBullet() {
+  for (const auto& enemy : g_enemies) {
+    Bullet newBullet;
+    newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
+    newBullet.y = enemy.y * GRID + GRID / 2;
+    newBullet.dx = 2;
+    newBullet.dy = 0;
+    g_bullets.push_back(newBullet);
+  }
+}
+
+void MoveBullets() {
+  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
+    it->x += it->dx;
+    it->y += it->dy;
+    if (it->x < 0 || it->x > BOARD_WIDTH) {
+      it = g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 void DrawBullets(HDC hdc) {
   HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 255));
   SelectObject(hdc, hBrush);
@@ -1065,132 +1190,57 @@ void DrawBullets(HDC hdc) {
 
 void DeleteAllBullets() { g_bullets.clear(); }
 
-// recv받은 데이터로 출력 정보 업데이트, 수신 버퍼로 전달받은 데이터 해석
-void Update() {
-  for (auto& item : g_items) {
-    // item의 disable을 전달받은 disable로 업데이트
-  }
-  // 맵 변경을 전달받으면 출력 정보 초기화    ex) if(header == 2)
-  /*
-  if (map_num == 1) InitMap(map, map1);
-  else if (map_num == 2) InitMap(map, map2);
-  else if (map_num == 3) InitMap(map, map3);
-  InitPlayer();
-  DeleteAllEnemies();
-  DeleteAllBullets();
-  DeleteAllItems();
-  InitEnemy(map);
-  InitItems(map);*/
+// 충돌 확인 함수
+void CheckCollisions() {
+  CheckItemPlayerCollisions();
+  CheckPlayerBulletCollisions();
+  CheckEnemyPlayerCollisions();
+}
 
-  if (map_num == 4 /*|| 게임 종료(연결 끊김)*/) {
-    // 4번째 맵 또는 게임 종료를 전달받으면 종료시 필요한 정보로 업데이트
-  }
-
-  // 승패 확인하는 해석도 넣어야함
-
-  // 여기부터 플레이어 출력을 위한 스프라이트 오프셋 업데이트
-  // 1. dx, dy를 멤버에서 제거했으므로 필요한 부분은 상태를 추가함 server
-  // 타이머스레드에서 플레이어 상태를 전송할 때, 모든 상태를 보낼 필요가
-  // 없어보임
-  // 2. 각 플레이어 전용 스프라이트 오프셋 두 개
-
-  // 플레이어1의 스프라이트 오프셋 업데이트
-  if (g_player.isWarking) {  // 걷기 스프라이트
-    if ((spriteX += spriteWidth) > 230) {
-      spriteX = 0;
-      spriteY = 24;
-      spriteHeight = 24;
+void CheckEnemyPlayerCollisions() {
+  for (auto it = g_enemies.begin(); it != g_enemies.end();) {
+    if (g_player.x >= it->x * GRID && g_player.x <= (it->x + 1) * GRID &&
+        g_player.y >= it->y * GRID && g_player.y <= (it->y + 1) * GRID) {
+      g_player.dx = 4;
+      g_player.isCharging = false;
+      g_player.jumpSpeed = 0;
+      ++it;  // 충돌 시 반복자를 증가시킵니다.
+    } else {
+      ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
     }
   }
+}
 
-  else if (g_player.isCharging) {
-    spriteX = 0;
-    spriteY = 116;
-    spriteHeight = 22;
-    /*if (g_player.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈 이것도 상태
-    변수로 recv받는건? bool fullcharge spriteX = 30;
-    }*/
-  }
-
-  else if (g_player.isFalling) {
-    if ((spriteX += spriteWidth) > 119) {
-      spriteX = 0;
+void CheckItemPlayerCollisions() {
+  for (auto it = g_items.begin(); it != g_items.end();) {
+    if (g_player.x >= it->x * GRID && g_player.x <= (it->x + 1) * GRID &&
+        g_player.y >= it->y * GRID && g_player.y <= (it->y + 1) * GRID) {
+      if ((*it).type == 0) {
+        g_player.EnhancedJumpPower = true;
+        g_player.isJumping = false;
+        it->disable = true;
+        it->interval = 60;
+      }
     }
-    spriteY = 48;
-    spriteHeight = 29;
+    ++it;
   }
+}
 
-  else if (g_player.isJumping /*&& !g_player.isSliding*/) {
-    if ((spriteX += spriteWidth) > 59) {
-      spriteX = 0;
+void CheckPlayerBulletCollisions() {
+  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
+    if (it->x >= g_player.x - PLAYER_SIZE &&
+        it->x <= g_player.x + PLAYER_SIZE &&
+        it->y >= g_player.y - PLAYER_SIZE &&
+        it->y <= g_player.y + PLAYER_SIZE) {
+      // 플레이어를 뒤로 밀침
+      g_player.dx = it->dx * 2;
+      g_player.isCharging = false;
+      g_player.jumpSpeed = 0;
+      g_player.damaged = true;
+      // 플레이어와 충돌 시 제거
+      it = g_bullets.erase(it);
+    } else {
+      ++it;
     }
-    spriteY = 77;
-    spriteHeight = 39;
-  }
-
-  else if (g_player.isSliding) {
-    if ((spriteX += spriteWidth) > 29) {
-      spriteX = 0;
-    }
-    spriteY = 138;
-    spriteHeight = 25;
-  }
-
-  else {
-    if ((spriteX += spriteWidth) > 230) {
-      spriteX = 0;
-    }
-    spriteY = 0;
-    spriteHeight = 24;
-  }
-
-  // 플레이어2의 스프라이트 오프셋 업데이트
-  if (otherPlayer.isWarking) {  // 걷기 스프라이트
-    if ((spriteX2 += spriteWidth) > 230) {
-      spriteX2 = 0;
-      spriteY2 = 24;
-      spriteHeight2 = 24;
-    }
-  }
-
-  else if (otherPlayer.isCharging) {
-    spriteX2 = 0;
-    spriteY2 = 116;
-    spriteHeight2 = 22;
-    /*if (otherPlayer.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈
-      spriteX2 = 30;
-    }*/
-  }
-
-  else if (otherPlayer.isFalling) {
-    if ((spriteX2 += spriteWidth) > 119) {
-      spriteX2 = 0;
-    }
-    spriteY2 = 48;
-    spriteHeight2 = 29;
-  }
-
-  else if (otherPlayer.isJumping /*&& !g_player.isSliding*/) {
-    if ((spriteX2 += spriteWidth) > 59) {
-      spriteX2 = 0;
-    }
-    spriteY2 = 77;
-    spriteHeight2 = 39;
-  }
-
-  else if (otherPlayer.isSliding) {
-    if ((spriteX2 += spriteWidth) > 29) {
-      spriteX2 = 0;
-    }
-    spriteY2 = 138;
-    spriteHeight2 = 25;
-  }
-
-  else {
-    if ((spriteX2 += spriteWidth) > 230) {
-      spriteX2 = 0;
-    }
-    spriteY2 = 0;
-    spriteHeight2 = 24;
   }
 }
