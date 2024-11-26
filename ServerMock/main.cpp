@@ -15,12 +15,11 @@ namespace server_mock {
 int constexpr BUF_SIZE = 100;
 int constexpr SERVER_PORT = 9000;
 
-int send_player_info(SOCKET player_1_sock, int my_platyer_x,
-                     int other_player_x) {
+int send_player_info(SOCKET player_1_sock) {
   auto constexpr p_size = sizeof(game_protocol::PlayerInfoPacket);
   std::array<char, p_size * 2> buf{};
   auto temp_player_1_info =
-      game_protocol::PlayerInfoPacket{.info{.x = my_platyer_x,
+      game_protocol::PlayerInfoPacket{.info{.x = 10,
                                             .y = 15,
                                             .isCharging = true,
                                             .isJumping = false,
@@ -32,7 +31,7 @@ int send_player_info(SOCKET player_1_sock, int my_platyer_x,
                                             .bulletY = 25}};
 
   auto temp_player_2_info =
-      game_protocol::PlayerInfoPacket{.info{.x = other_player_x,
+      game_protocol::PlayerInfoPacket{.info{.x = 3,
                                             .y = 5,
                                             .isCharging = true,
                                             .isJumping = false,
@@ -75,8 +74,8 @@ void recv_handler(SOCKET client_sock) {
     std::print("{}", std::string_view{buf});
     int packet_size{};
 
-    if (counted % 2) {
-      return_value = send_player_info(client_sock, counted, counted + 5);
+    if (rand() % 2) {
+      return_value = send_player_info(client_sock);
     } else {
       auto temp_map_info = game_protocol::MapInfoPacket{.info = 4};
       packet_size = sizeof(temp_map_info);
