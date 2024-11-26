@@ -4,12 +4,10 @@
 #include "common.h"
 #include "map.h"
 #include "sendParam.hpp"
-#include <windows.h>  // windows °ü·Ã ÇÔ¼ö Æ÷ÇÔ
+#include <windows.h>  // windows ê´€ë ¨ í•¨ìˆ˜ í¬í•¨
 #include <iostream>
 #include <vector>
 
-char clientCount = 0;
-char matchCount = 0;
 CRITICAL_SECTION cs;
 
 typedef struct Player {
@@ -19,9 +17,9 @@ typedef struct Player {
   bool isCharging;
   bool isJumping;
   bool isSliding;
-  bool slip;  // ¹Ì²ô·¯Áö´Â µ¿¾È °è¼Ó true
+  bool slip;  // ë¯¸ë„ëŸ¬ì§€ëŠ” ë™ì•ˆ ê³„ì† true
   bool damaged;
-  std::string face;  // face: left, right
+  bool face;  // face: left: 0, right: 1
   bool EnhancedJumpPower;
   bool spaceKeyReleased = true;
 };
@@ -71,49 +69,49 @@ typedef struct MATCH {
 };
 std::vector<MATCH> g_matches;
 
-// Ãæµ¹Ã³¸® ÇÔ¼ö
+// ì¶©ëŒì²˜ë¦¬ í•¨ìˆ˜
 void updatePlayerD(int matchNum);
 // applyGravity();
-void movePlayer(int matchNum); // ÇÃ·¹ÀÌ¾î ÀÌµ¿
+void movePlayer(int matchNum); // í”Œë ˆì´ì–´ ì´ë™
 // moveBullets();
 // shootInterval++
-// ¾ÆÀÌÅÛ Àç»ı¼º ÄÚµå
-// ÃÑ¾Ë Àç»ı¼º ÄÚµå
-// Æ÷Å» Ãæµ¹Ã³¸®
-// ¿ÀºêÁ§Æ® Ãæµ¹Ã³¸®
+// ì•„ì´í…œ ì¬ìƒì„± ì½”ë“œ
+// ì´ì•Œ ì¬ìƒì„± ì½”ë“œ
+// í¬íƒˆ ì¶©ëŒì²˜ë¦¬
+// ì˜¤ë¸Œì íŠ¸ ì¶©ëŒì²˜ë¦¬
 void updateSendParam(int matchNum);
 void CheckCollisions(int matchNum);
 void CheckEnemyPlayerCollisions(int matchNum);
 void CheckItemPlayerCollisions(int matchNum);
 void CheckPlayerBulletCollisions(int matchNum);
 
-// ¸ÅÄ¡¸¦ »èÁ¦ÇÏ´Â ÇÔ¼ö
+// ë§¤ì¹˜ë¥¼ ì‚­ì œí•˜ëŠ” í•¨ìˆ˜
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
-  // µğ¹ö±×¿ë Ãâ·Â
-  printf("%d¸ÅÄ¡ÀÇ %d¹ø ÇÃ·¹ÀÌ¾îÀÇ ¿¬°áÀÌ Á¾·áµÆ½À´Ï´Ù\n", matchNum, playerNum);
+  // ë””ë²„ê·¸ìš© ì¶œë ¥
+  printf("%dë§¤ì¹˜ì˜ %dë²ˆ í”Œë ˆì´ì–´ì˜ ì—°ê²°ì´ ì¢…ë£ŒëìŠµë‹ˆë‹¤\n", matchNum, playerNum);
 
   std::vector<MATCH>::iterator iter = g_matches.begin();
   for (int i = 0; i < matchNum; i++) iter++;
   g_matches.erase(std::remove(g_matches.begin(), g_matches.end(), *iter),
                   g_matches.end());
-  // µğ¹ö±×¿ë Ãâ·Â
-  printf("¸ÅÄ¡ ¿ø¼Ò »èÁ¦\n");
+  // ë””ë²„ê·¸ìš© ì¶œë ¥
+  printf("ë§¤ì¹˜ ì›ì†Œ ì‚­ì œ\n");
 
   for (int i = 0; i < g_matches.size(); i++) {
     g_matches[i].matchNum = i;
   }
 
-  // ¹Ù²Û matchNumÀ» ´Ù¸¥ ½º·¹µå¿¡µµ Àû¿ë½ÃÄÑ¾ßÇÔ
-  // -> °¢ recv½º·¹µå¿¡¼­ ¹İº¹¹®ÀÌ ½ÃÀÛµÉ ¶§ ÀÚ½ÅÀÇ ¸ÅÄ¡ ¹øÈ£¸¦ °Ë»çÇÑ´Ù
+  // ë°”ê¾¼ matchNumì„ ë‹¤ë¥¸ ìŠ¤ë ˆë“œì—ë„ ì ìš©ì‹œì¼œì•¼í•¨
+  // -> ê° recvìŠ¤ë ˆë“œì—ì„œ ë°˜ë³µë¬¸ì´ ì‹œì‘ë  ë•Œ ìì‹ ì˜ ë§¤ì¹˜ ë²ˆí˜¸ë¥¼ ê²€ì‚¬í•œë‹¤
 }
 
-// Å¬¶óÀÌ¾ğÆ®¿Í µ¥ÀÌÅÍ Åë½Å
+// í´ë¼ì´ì–¸íŠ¸ì™€ ë°ì´í„° í†µì‹ 
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
   recvParam* param = (recvParam*)arg;
   SOCKET client_sock = param->client_sock;
   char matchNum = param->matchNum;
   char playerNum = param->playerNum;
-  delete param;  // µ¿Àû ÇÒ´ç ÇØÁ¦
+  delete param;  // ë™ì  í• ë‹¹ í•´ì œ
 
   int retval;
   struct sockaddr_in clientaddr;
@@ -121,23 +119,42 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   int addrlen;
   char buf[BUFSIZE + 1];
 
-  // Å¬¶óÀÌ¾ğÆ® Á¤º¸ ¾ò±â
+  // í´ë¼ì´ì–¸íŠ¸ ì •ë³´ ì–»ê¸°
   addrlen = sizeof(clientaddr);
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  printf("\n[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¢¼Ó: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr, ntohs(clientaddr.sin_port));
+  //printf("\n[TCP ì„œë²„] í´ë¼ì´ì–¸íŠ¸ ì ‘ì†: IP ì£¼ì†Œ=%s, í¬íŠ¸ ë²ˆí˜¸=%d\n", addr, ntohs(clientaddr.sin_port));
 
   while (1) {
-    // µ¥ÀÌÅÍ ¹Ş±â
+    // ë²¡í„°ì˜ ìœ íš¨í•œ ë²”ìœ„ ë‚´ì—ì„œ, í˜„ì¬ ë§¤ì¹˜ ë²ˆí˜¸ì™€, ë§¤ì¹˜[í˜„ì¬ ë§¤ì¹˜ë²ˆí˜¸]ì˜ ë§¤ì¹˜
+    // ë²ˆí˜¸ê°€ ì¼ì¹˜í•˜ëŠ” ì§€ ë¹„êµí•œë‹¤, ë‹¤ë¥´ë‹¤ë©´ ê°ì†Œ
+    EnterCriticalSection(&cs);
+    while (matchNum >= 0 && matchNum < g_matches.size() &&
+           g_matches[matchNum].matchNum != matchNum) {
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
+      printf(
+          "matchNum: %d\n matchNumë²ˆì§¸ ë§¤ì¹˜ì˜ ì‹¤ì œ ë§¤ì¹˜ ë²ˆí˜¸: %d\nì¼ì¹˜í•˜ì§€ "
+          "ì•ŠìŒ, matchNumê°ì†Œ\n",
+          matchNum, g_matches[matchNum].matchNum);
+      matchNum--;
+    }
+    LeaveCriticalSection(&cs);
+
+    // ë””ë²„ê·¸ìš© ì¶œë ¥
+    //printf("\nrecvThread ë£¨í”„ ì‹œì‘, matchNum: %d, playerNum: %d\n", matchNum, playerNum); 
+    // ë°ì´í„° ë°›ê¸°
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
+      EnterCriticalSection(&cs);
+      closeSocketFunc(client_sock, matchNum, playerNum);
+      LeaveCriticalSection(&cs);
       break;
     } else if (retval == 0)
       break;
 
-    // ¹ŞÀº µ¥ÀÌÅÍ Ãâ·Â
+    // ë°›ì€ ë°ì´í„° ì¶œë ¥
     buf[retval] = '\0';
     
     if (playerNum == 0) {
@@ -156,79 +173,92 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     } 
   }
 
-  // ¼ÒÄÏ ´İ±â
+  // ì†Œì¼“ ë‹«ê¸°
   EnterCriticalSection(&cs);
   closesocket(client_sock);
-  printf("[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¾·á: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr, ntohs(clientaddr.sin_port));
+  //printf("[TCP ì„œë²„] í´ë¼ì´ì–¸íŠ¸ ì¢…ë£Œ: IP ì£¼ì†Œ=%s, í¬íŠ¸ ë²ˆí˜¸=%d\n", addr, ntohs(clientaddr.sin_port));
   LeaveCriticalSection(&cs);
   return 0;
 }
 
 DWORD WINAPI timerProcessClient(LPVOID lpParam) {
-  // Å¸ÀÌ¸Ó »ı¼º
-  int matchNum = *(int*)lpParam;
+  // íƒ€ì´ë¨¸ ìƒì„±
+  int matchNum = (*(int*)lpParam);
   delete (int*)lpParam;
   HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
   if (hTimer == NULL) {
-    printf("Å¸ÀÌ¸Ó »ı¼º ½ÇÆĞ\n");
+    printf("íƒ€ì´ë¨¸ ìƒì„± ì‹¤íŒ¨\n");
     return 1;
   }
 
-  // Å¸ÀÌ¸Ó °£°İÀ» ¼³Á¤ (1/30ÃÊ)
-  LARGE_INTEGER liDueTime;  // LARGE_INTEGER´Â SetWaitableTimer¿¡¼­ ¿ä±¸ÇÔ
+  // íƒ€ì´ë¨¸ ê°„ê²©ì„ ì„¤ì • (1/30ì´ˆ)
+  LARGE_INTEGER liDueTime;  // LARGE_INTEGERëŠ” SetWaitableTimerì—ì„œ ìš”êµ¬í•¨
   liDueTime.QuadPart = -333300;
 
   while (true) {
     if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
-      printf("Å¸ÀÌ¸Ó ¼³Á¤ ½ÇÆĞ\n");
+      printf("íƒ€ì´ë¨¸ ì„¤ì • ì‹¤íŒ¨\n");
       CloseHandle(hTimer);
       return 1;
     }
 
-    // Å¸ÀÌ¸Ó ÀÌº¥Æ®°¡ ¹ß»ıÇÒ ¶§±îÁö ´ë±â
+    // íƒ€ì´ë¨¸ ì´ë²¤íŠ¸ê°€ ë°œìƒí•  ë•Œê¹Œì§€ ëŒ€ê¸°
     WaitForSingleObject(hTimer, INFINITE);
 
-    // ¸ÅÄ¡ µ¥ÀÌÅÍ ¾÷µ¥ÀÌÆ®
+    // ë§¤ì¹˜ ë°ì´í„° ì—…ë°ì´íŠ¸
     EnterCriticalSection(&cs);
-    // ÇÃ·¹ÀÌ¾î ÁÂÇ¥ ÀÌµ¿
-    //updatePlayer(matchNum);
 
-    // º¤ÅÍÀÇ À¯È¿ÇÑ ¹üÀ§ ³»¿¡¼­, ÇöÀç ¸ÅÄ¡ ¹øÈ£¿Í, ¸ÅÄ¡[ÇöÀç ¸ÅÄ¡¹øÈ£]ÀÇ ¸ÅÄ¡
-    // ¹øÈ£°¡ ÀÏÄ¡ÇÏ´Â Áö ºñ±³ÇÑ´Ù, ´Ù¸£´Ù¸é °¨¼Ò
+        // ë²¡í„°ì˜ ìœ íš¨í•œ ë²”ìœ„ ë‚´ì—ì„œ, í˜„ì¬ ë§¤ì¹˜ ë²ˆí˜¸ì™€, ë§¤ì¹˜[í˜„ì¬ ë§¤ì¹˜ë²ˆí˜¸]ì˜ ë§¤ì¹˜
+    // ë²ˆí˜¸ê°€ ì¼ì¹˜í•˜ëŠ” ì§€ ë¹„êµí•œë‹¤, ë‹¤ë¥´ë‹¤ë©´ ê°ì†Œ
     while (!(matchNum < 0) && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
-      // µğ¹ö±×¿ë Ãâ·Â
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
       printf(
-          "matchNum: %d\n matchNum¹øÂ° ¸ÅÄ¡ÀÇ ½ÇÁ¦ ¸ÅÄ¡ ¹øÈ£: %d\nÀÏÄ¡ÇÏÁö "
-          "¾ÊÀ½, matchNum°¨¼Ò\n",
+          "matchNum: %d\n matchNumë²ˆì§¸ ë§¤ì¹˜ì˜ ì‹¤ì œ ë§¤ì¹˜ ë²ˆí˜¸: %d\nì¼ì¹˜í•˜ì§€ "
+          "ì•ŠìŒ, matchNumê°ì†Œ\n",
           matchNum, g_matches[matchNum].matchNum);
       matchNum--;
     }
 
-    // ÇÃ·¹ÀÌ¾î dx dy º¯È­
+    // í”Œë ˆì´ì–´ ì¢Œí‘œ ì´ë™
+    //updatePlayer(matchNum);
+
+    // ë²¡í„°ì˜ ìœ íš¨í•œ ë²”ìœ„ ë‚´ì—ì„œ, í˜„ì¬ ë§¤ì¹˜ ë²ˆí˜¸ì™€, ë§¤ì¹˜[í˜„ì¬ ë§¤ì¹˜ë²ˆí˜¸]ì˜ ë§¤ì¹˜
+    // ë²ˆí˜¸ê°€ ì¼ì¹˜í•˜ëŠ” ì§€ ë¹„êµí•œë‹¤, ë‹¤ë¥´ë‹¤ë©´ ê°ì†Œ
+    while (!(matchNum < 0) && matchNum < g_matches.size() &&
+           g_matches[matchNum].matchNum != matchNum) {
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
+      printf(
+          "matchNum: %d\n matchNumë²ˆì§¸ ë§¤ì¹˜ì˜ ì‹¤ì œ ë§¤ì¹˜ ë²ˆí˜¸: %d\nì¼ì¹˜í•˜ì§€ "
+          "ì•ŠìŒ, matchNumê°ì†Œ\n",
+          matchNum, g_matches[matchNum].matchNum);
+      matchNum--;
+    }
+
+    // í”Œë ˆì´ì–´ dx dy ë³€í™”
     updatePlayerD(matchNum);
     // printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
-    // ÇÃ·¹ÀÌ¾î ÀÌµ¿
+    // í”Œë ˆì´ì–´ ì´ë™
     // movePlayer(matchNum);
     // moveBullets();
     // shootInterval++
-    // ¾ÆÀÌÅÛ Àç»ı¼º ÄÚµå
-    // ÃÑ¾Ë Àç»ı¼º ÄÚµå
-    // Æ÷Å» Ãæµ¹Ã³¸®
-    // ¿ÀºêÁ§Æ® Ãæµ¹Ã³¸®
-    // sendParam¾÷µ¥ÀÌÆ®
+    // ì•„ì´í…œ ì¬ìƒì„± ì½”ë“œ
+    // ì´ì•Œ ì¬ìƒì„± ì½”ë“œ
+    // í¬íƒˆ ì¶©ëŒì²˜ë¦¬
+    // ì˜¤ë¸Œì íŠ¸ ì¶©ëŒì²˜ë¦¬
+    // sendParamì—…ë°ì´íŠ¸
     updateSendParam(matchNum);
     // printf("%d, %d\r", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
-    // send ºÎºĞ
+    // send ë¶€ë¶„
     char sendBuf[BUFSIZE];
     int sendSize = sizeof(sendParam::sendParam);
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
-        //printf("Å¬¶óÀÌ¾ğÆ® %d ¼ÒÄÏÀÌ NULLÀÔ´Ï´Ù.\n", i);
+        //printf("í´ë¼ì´ì–¸íŠ¸ %d ì†Œì¼“ì´ NULLì…ë‹ˆë‹¤.\n", i);
         continue;
       }
-      //printf("Å¬¶óÀÌ¾ğÆ® %d ¼ÒÄÏ È®ÀÎ: %d\n", i, g_matches[matchNum].client_sock[i]);
+      //printf("í´ë¼ì´ì–¸íŠ¸ %d ì†Œì¼“ í™•ì¸: %d\n", i, g_matches[matchNum].client_sock[i]);
       if (i == 0) {
         memcpy(sendBuf, &g_matches[matchNum].SPlayer1,
                sizeof(sendParam::sendParam));
@@ -238,14 +268,14 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       }
       int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
       if (retval == SOCKET_ERROR) {
-        printf("Å¬¶óÀÌ¾ğÆ® %d¿¡°Ô µ¥ÀÌÅÍ Àü¼Û ½ÇÆĞ: %d\n", i,
-               WSAGetLastError());
+        /*printf("í´ë¼ì´ì–¸íŠ¸ %dì—ê²Œ ë°ì´í„° ì „ì†¡ ì‹¤íŒ¨: %d\n", i,
+               WSAGetLastError());*/
       } else {
-        printf("Å¬¶óÀÌ¾ğÆ® %d¿¡°Ô µ¥ÀÌÅÍ Àü¼Û ¼º°ø: %d ¹ÙÀÌÆ® Àü¼ÛµÊ\r", i, retval);
+        printf("í´ë¼ì´ì–¸íŠ¸ %dì—ê²Œ ë°ì´í„° ì „ì†¡ ì„±ê³µ: %d ë°”ì´íŠ¸ ì „ì†¡ë¨\r", i, retval);
       }
     }
     LeaveCriticalSection(&cs);
-    // ÇÊ¿ä¿¡ µû¶ó Å¸ÀÌ¸Ó Áß´Ü Á¶°ÇÀ» Ãß°¡.
+    // í•„ìš”ì— ë”°ë¼ íƒ€ì´ë¨¸ ì¤‘ë‹¨ ì¡°ê±´ì„ ì¶”ê°€.
   }
 
   CloseHandle(hTimer);
@@ -255,11 +285,11 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 int main(int argc, char* argv[]) {
   int retval;
 
-  // À©¼Ó ÃÊ±âÈ­
+  // ìœˆì† ì´ˆê¸°í™”
   WSADATA wsa;
   if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 1;
 
-  // ¼ÒÄÏ »ı¼º
+  // ì†Œì¼“ ìƒì„±
   SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_sock == INVALID_SOCKET) err_quit("socket()");
 
@@ -276,64 +306,83 @@ int main(int argc, char* argv[]) {
   retval = listen(listen_sock, SOMAXCONN);
   if (retval == SOCKET_ERROR) err_quit("listen()");
 
-  // µ¥ÀÌÅÍ Åë½Å¿¡ »ç¿ëÇÒ º¯¼ö
+  // ë°ì´í„° í†µì‹ ì— ì‚¬ìš©í•  ë³€ìˆ˜
   struct sockaddr_in clientaddr;
   int addrlen;
   HANDLE hThread;
-  recvParam *rParam;
+  recvParam* rParam;
+  int* matchNumParam;
   InitializeCriticalSection(&cs);
 
   while (1) {
-    printf("¼­¹ö ´ë±âÁß...\n");
     addrlen = sizeof(clientaddr);
+    // ì—¬ê¸°ì„œ rParam í• ë‹¹ í•´ì„œ ìƒì„± í•˜ê³  rParamê°’ ì£¼ê³ 
     rParam = new recvParam{};
-    rParam->client_sock = accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
+    matchNumParam = new int{};
+    rParam->client_sock =
+        accept(listen_sock, (struct sockaddr*)&clientaddr, &addrlen);
     if (rParam->client_sock == INVALID_SOCKET) {
       err_display("accept()");
       break;
     }
-    // clinetCount: ÇöÀç Å¬¶óÀÌ¾ğÆ® ¼ö, 2¹øÂ° Å¬¶óÀÌ¾ğÆ®°¡ ¸ÅÄ¡¿¡ Ãß°¡µÇ¸é ´Ù½Ã 0, 
-    // ¸ÅÄ¡ »ı¼º°ú ¸ÅÄ¡ ³» ÇÃ·¹ÀÌ¾î ¼ö ÆÇ´Ü matchCount: ÇöÀç ¸ÅÄ¡ ¼ö, 
-    // 2¹øÂ° Å¬¶óÀÌ¾ğÆ®°¡ ¸ÅÄ¡¿¡ Ãß°¡µÇ¸é +1, ¸ÅÄ¡ ¹øÈ£·Î Àü´Ş ¸ÅÄ¡°¡ ¾ø¾îÁö¸é matchNum Á¶Á¤ ÇÊ¿ä, 
-    // Å¬¶óÀÌ¾ğÆ® ¸ŞÀÎ ¸¸µç ÈÄ recv ¼Û¼ö½Å È®ÀÎÇÏ°í Ãß°¡ÇÒ ¿¹Á¤
+    // ë§¤ì¹˜ ìƒì„± ì¡°ê±´ - í˜„ì¬ ë§¤ì¹˜ê°€ ì—†ê±°ë‚˜(0), ë§ˆì§€ë§‰ ë§¤ì¹˜ì˜ playerê°€ ë‹¤
+    // ì°¨ìˆìœ¼ë©´ ìƒì„± í”Œë ˆì´ì–´ 1 ìƒì„± ì¡°ê±´: ë§ˆì§€ë§‰ ë§¤ì¹˜ì˜ ì†Œì¼“0ë²ˆì´ ë¹„ì—ˆìœ¼ë©´ ìƒì„±
+    // í”Œë ˆì´ì–´ 2 ìƒì„± ì¡°ê±´: ë§ˆì§€ë§‰ ë§¤ì¹˜ì˜ ì†Œì¼“1ì´ ì°¨ìˆê³  ì†Œì¼“2ê°€ ë¹„ì—ˆìœ¼ë©´ ìƒì„±
+    // íƒ€ì´ë¨¸ ìƒì„± ì¡°ê±´: í”Œë ˆì´ì–´ 1 ìƒì„±í•  ë•Œ
     char addr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-    printf("\n[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¢¼Ó: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr,
-           ntohs(clientaddr.sin_port));
-
-    if (clientCount == 0) g_matches.push_back(MATCH());
-    // ¸ÅÄ¡ ±¸Á¶Ã¼ ÃÊ±âÈ­ ÇØ¾ßÇÔ 
-    // 
-    if (g_matches[matchCount].client_sock[clientCount] == NULL) {
+    /*printf("\n[TCP ì„œë²„] í´ë¼ì´ì–¸íŠ¸ ì ‘ì†: IP ì£¼ì†Œ=%s, í¬íŠ¸ ë²ˆí˜¸=%d\n", addr,
+           ntohs(clientaddr.sin_port));*/
+    // ë§¤ì¹˜ ìƒì„±
+    EnterCriticalSection(&cs);
+    if (g_matches.size() == 0 ||
+        (!g_matches.empty() && g_matches.back().client_sock[0] != NULL &&
+         g_matches.back().client_sock[1] != NULL))
+      g_matches.push_back(MATCH());
+    LeaveCriticalSection(&cs);
+    // í”Œë ˆì´ì–´1 ìŠ¤ë ˆë“œ, íƒ€ì´ë¨¸ ìŠ¤ë ˆë“œ ìƒì„±
+    EnterCriticalSection(&cs);
+    if (g_matches.back().client_sock[0] == NULL) {
       rParam->playerNum = 0;
-      rParam->matchNum = matchCount;
-      g_matches[matchCount].client_sock[clientCount] = rParam->client_sock;
-      g_matches[matchCount].recvThread[0] = CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
-      clientCount++;
-      int* pMatchNum = new int(matchCount);
-      g_matches[matchCount].timerThread = CreateThread(NULL, 0, timerProcessClient, pMatchNum, 0, NULL);
-    } 
-    else if (g_matches[matchCount].client_sock[0] != NULL &&
-               g_matches[matchCount].client_sock[1] == NULL) {
-      rParam->playerNum = 1;
-      rParam->matchNum = matchCount;
-      g_matches[matchCount].recvThread[1] =
+      rParam->matchNum = g_matches.size() - 1;
+      *matchNumParam = g_matches.size() - 1;
+      // g_matchesì˜ í´ë¼ì´ì–¸íŠ¸ ì†Œì¼“, ë§¤ì¹˜ ë„˜ë²„ ì—…ë°ì´íŠ¸
+      g_matches.back().client_sock[0] = rParam->client_sock;
+      g_matches.back().matchNum = g_matches.size() - 1;
+      // ìˆ˜ì‹  ìŠ¤ë ˆë“œ ìƒì„±
+      g_matches.back().recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
-      matchCount++;
-      clientCount = 0;
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
+      printf("%zuë²ˆ ë§¤ì¹˜ ëŒ€ê¸°ì¤‘.. í´ë¼ì´ì–¸íŠ¸ ìˆ˜: %d\n", g_matches.size() - 1,
+             1);
+      // íƒ€ì´ë¨¸ ìŠ¤ë ˆë“œ ìƒì„±
+      hThread = CreateThread(NULL, 0, timerProcessClient, matchNumParam, 0, NULL);
     }
+    // í”Œë ˆì´ì–´2 ìŠ¤ë ˆë“œ ìƒì„±
+    else if (g_matches.back().client_sock[0] != NULL &&
+             g_matches.back().client_sock[1] == NULL) {
+      rParam->playerNum = 1;
+      rParam->matchNum = g_matches.size() - 1;
+      g_matches.back().client_sock[1] = rParam->client_sock;
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
+      printf("%dë²ˆì§¸ ë§¤ì¹˜ %dë²ˆì§¸ í”Œë ˆì´ì–´ ìŠ¤ë ˆë“œ ìƒì„±\n", rParam->matchNum,
+             rParam->playerNum);
+      (g_matches.end() - 1)->recvThread[1] =
+          CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
+    }
+    LeaveCriticalSection(&cs);
   }
 
-  // ¼ÒÄÏ ´İ±â
+  // ì†Œì¼“ ë‹«ê¸°
   closesocket(listen_sock);
   DeleteCriticalSection(&cs);
-  // À©¼Ó Á¾·á
+  // ìœˆì† ì¢…ë£Œ
   WSACleanup();
   return 0;
 }
 
 void updatePlayerD(int matchNum) {
-  // player1 Ã³¸®
+  // player1 ì²˜ë¦¬
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
       g_matches[matchNum].player1.dx -= 1;
@@ -343,7 +392,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.dx += 1;
     }
   } else if (g_matches[matchNum].p1 != '0' && g_matches[matchNum].p1 != '1') {
-    // ¿ŞÂÊ, ¿À¸¥ÂÊ Å°°¡ ¸ğµÎ ´­¸®Áö ¾ÊÀº »óÅÂ
+    // ì™¼ìª½, ì˜¤ë¥¸ìª½ í‚¤ê°€ ëª¨ë‘ ëˆŒë¦¬ì§€ ì•Šì€ ìƒíƒœ
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;
     } else if (g_matches[matchNum].player1.dx < 0) {
@@ -352,7 +401,7 @@ void updatePlayerD(int matchNum) {
   }
   g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
   g_matches[matchNum].p1 = 'a';
-  // player2 Ã³¸®
+  // player2 ì²˜ë¦¬
   if (g_matches[matchNum].p2 == 0) {
     if (g_matches[matchNum].player2.dx >= -3) {
       g_matches[matchNum].player2.dx -= 1;
@@ -362,7 +411,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player2.dx += 1;
     }
   } else if (g_matches[matchNum].p2 != 0 && g_matches[matchNum].p2 != 1) {
-    // ¿ŞÂÊ, ¿À¸¥ÂÊ Å°°¡ ¸ğµÎ ´­¸®Áö ¾ÊÀº »óÅÂ
+    // ì™¼ìª½, ì˜¤ë¥¸ìª½ í‚¤ê°€ ëª¨ë‘ ëˆŒë¦¬ì§€ ì•Šì€ ìƒíƒœ
     if (g_matches[matchNum].player2.dx > 0) {
       g_matches[matchNum].player2.dx -= 1;
     } else if (g_matches[matchNum].player2.dx < 0) {
@@ -384,36 +433,36 @@ void updatePlayerD(int matchNum) {
   bool isSlopeGoLeftCollision =
       IsSlopeGoLeftColliding(map, g_player.x, g_player.y);
 
-  // ¼öÁ÷ Ãæµ¹ Ã³¸®
+  // ìˆ˜ì§ ì¶©ëŒ ì²˜ë¦¬
   if (!isVerticalCollision) {
     g_player.y = newY;
     if (!g_player.EnhancedJumpPower) {
       g_player.isJumping = true;
     }
   } else {
-    // ¹Ù´Ú Ãæµ¹ ½Ã yÃà À§Ä¡ º¸Á¤
+    // ë°”ë‹¥ ì¶©ëŒ ì‹œ yì¶• ìœ„ì¹˜ ë³´ì •
     if (g_player.dy > 0) {
       while (!IsColliding(map, g_player.x, g_player.y + 1)) {
         g_player.y += 1;
       }
     }
-    g_player.dy = 0;  // Ãæµ¹ ÈÄ yÃà ¼Óµµ ÃÊ±âÈ­
+    g_player.dy = 0;  // ì¶©ëŒ í›„ yì¶• ì†ë„ ì´ˆê¸°í™”
     g_player.isJumping = false;
     g_player.isSliding = false;
   }
 
-  // ¼öÆò Ãæµ¹ Ã³¸®
+  // ìˆ˜í‰ ì¶©ëŒ ì²˜ë¦¬
   if (!isHorizontalCollision) {
     g_player.x = newX;
   } else {
-    g_player.dx = 0;  // Ãæµ¹ ÈÄ xÃà ¼Óµµ ÃÊ±âÈ­
+    g_player.dx = 0;  // ì¶©ëŒ í›„ xì¶• ì†ë„ ì´ˆê¸°í™”
   }
 
   if (isSlopeGoRightCollision) {
     g_player.isSliding = true;
 
-    g_player.dy = 1;  // °æ»ç¸é À§¿¡¼­ ¹Ì²ô·¯Áü ¼Óµµ
-    g_player.dx = 3;  // ¿À¸¥ÂÊ ¾Æ·¡·Î ¹Ì²ô·¯Áü
+    g_player.dy = 1;  // ê²½ì‚¬ë©´ ìœ„ì—ì„œ ë¯¸ë„ëŸ¬ì§ ì†ë„
+    g_player.dx = 3;  // ì˜¤ë¥¸ìª½ ì•„ë˜ë¡œ ë¯¸ë„ëŸ¬ì§
     newX = g_player.x + g_player.dx;
     newY = g_player.y + g_player.dy;
     g_player.x = newX;
@@ -423,8 +472,8 @@ void updatePlayerD(int matchNum) {
   if (isSlopeGoLeftCollision) {
     g_player.isSliding = true;
 
-    g_player.dy = 1;   // °æ»ç¸é À§¿¡¼­ ¹Ì²ô·¯Áü ¼Óµµ
-    g_player.dx = -3;  // ¿À¸¥ÂÊ ¾Æ·¡·Î ¹Ì²ô·¯Áü
+    g_player.dy = 1;   // ê²½ì‚¬ë©´ ìœ„ì—ì„œ ë¯¸ë„ëŸ¬ì§ ì†ë„
+    g_player.dx = -3;  // ì˜¤ë¥¸ìª½ ì•„ë˜ë¡œ ë¯¸ë„ëŸ¬ì§
     newX = g_player.x + g_player.dx;
     newY = g_player.y + g_player.dy;
     g_player.x = newX;
@@ -433,19 +482,19 @@ void updatePlayerD(int matchNum) {
 }*/
 // moveBullets();
 // shootInterval++
-// ¾ÆÀÌÅÛ Àç»ı¼º ÄÚµå
-// ÃÑ¾Ë Àç»ı¼º ÄÚµå
-// Æ÷Å» Ãæµ¹Ã³¸®
+// ì•„ì´í…œ ì¬ìƒì„± ì½”ë“œ
+// ì´ì•Œ ì¬ìƒì„± ì½”ë“œ
+// í¬íƒˆ ì¶©ëŒì²˜ë¦¬
 
 void updateSendParam(int matchNum) {
   // player 1
   g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
   g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
-  g_matches[matchNum].SPlayer1.acting = 0;  // ÃßÈÄ Ãæµ¹Ã³¸® ÀÌÈÄ Ãß°¡
+  g_matches[matchNum].SPlayer1.acting = 0;  // ì¶”í›„ ì¶©ëŒì²˜ë¦¬ ì´í›„ ì¶”ê°€
                                             // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
   g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
-  g_matches[matchNum].SPlayer2.acting = 0;  // ÃßÈÄ Ãæµ¹Ã³¸® ÀÌÈÄ Ãß°¡
+  g_matches[matchNum].SPlayer2.acting = 0;  // ì¶”í›„ ì¶©ëŒì²˜ë¦¬ ì´í›„ ì¶”ê°€
 }
 
 void CheckCollisions(int matchNum) {
