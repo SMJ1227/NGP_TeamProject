@@ -448,7 +448,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       }
     }
 
-    // 
+    //
     is_pressed_space = (space_check_value & 0x8000) != 0;
 
     if (is_pressed_space && !was_pressed_space) {
