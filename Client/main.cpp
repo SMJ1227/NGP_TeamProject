@@ -9,6 +9,7 @@
 #include <array>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <syncstream>
@@ -29,7 +30,7 @@ const int BOARD_WIDTH = MAP_WIDTH * GRID;
 const int BOARD_HEIGHT = MAP_HEIGHT * GRID;
 const int PLAYER_SIZE = 20;
 const double M_PI = 3.141592;
-const int GRAVITY = 1;  // Áß·Â »ó¼ö
+const int GRAVITY = 1;  // ì¤‘ë ¥ ìƒìˆ˜
 
 int map_num = 0;
 int tile_num = 0;
@@ -180,8 +181,9 @@ WSADATA g_wsa;
 
 HANDLE g_hSendThread{};
 HANDLE g_hRecvThread{};
+UINT constexpr WM_NETWORK_INFORM = WM_USER + 1;
 
-// Àü¿ª º¯¼ö
+// ì „ì—­ ë³€ìˆ˜
 struct Player {
   int x, y;
   bool isWarking;
@@ -220,8 +222,8 @@ void DrawForestBg(HDC hDC);
 void DrawForestTile(HDC hDC);
 void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]);
 void InitPlayer(Player& player);
-void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y, const int& width,
-                const int& height);
+void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y,
+                const int& width, const int& height);
 void InitItems(int map[MAP_HEIGHT][MAP_WIDTH]);
 void GenerateItem(int x, int y, int num);
 void DrawItem(HDC hDC);
@@ -233,12 +235,12 @@ void DeleteAllEnemies();
 void DrawBullets(HDC hDC);
 void DeleteAllBullets();
 
-// WinMain ÇÔ¼ö
+// WinMain í•¨ìˆ˜
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpszCmdParam, int nCmdShow) {
   srand((unsigned int)time(NULL));
 
-  // À©¼Ó ÃÊ±âÈ­
+  // ìœˆì† ì´ˆê¸°í™”
   if (WSAStartup(MAKEWORD(2, 2), &g_wsa) != 0) {
     std::exit(-1);
   };
@@ -271,10 +273,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (PeekMessage(&Message, NULL, 0, 0, PM_REMOVE)) {
       if (Message.message == WM_QUIT) break;
     }
-    // #1 ¸¶¿ì½º °ü·ÃµÈ ¸Ş¼¼Áö¸¦ ¹«½ÃÇÏ´Â Ã¹¹øÂ° ¹æ¹ı
+    // #1 ë§ˆìš°ìŠ¤ ê´€ë ¨ëœ ë©”ì„¸ì§€ë¥¼ ë¬´ì‹œí•˜ëŠ” ì²«ë²ˆì§¸ ë°©ë²•
     // if (Message.message == WM_MOUSEMOVE || Message.message == WM_LBUTTONDOWN
     // || Message.message == WM_RBUTTONDOWN) {
-    //    // ¸¶¿ì½º ¸Ş½ÃÁö ¹«½Ã
+    //    // ë§ˆìš°ìŠ¤ ë©”ì‹œì§€ ë¬´ì‹œ
     //    continue;
     //}
     TranslateMessage(&Message);
@@ -288,51 +290,119 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 std::ofstream clientlog{"client_send.log"};
 std::osyncstream wow{clientlog};
 
+struct RecvClientParam {
+  SOCKET recv_socket;
+  HWND window_handle;
+};
+struct PlayerInfoMSG {
+  game_protocol::PlayerInfo my_player, other_player;
+};
+
 DWORD WINAPI RecvClient(LPVOID lp_param) {
-  SOCKET server_sock = (SOCKET)lp_param;
+  auto [server_sock, window_handle] =
+      *(reinterpret_cast<RecvClientParam*>(lp_param));
+
+  delete reinterpret_cast<RecvClientParam*>(lp_param);
+
   int return_value{};
   int constexpr BUFF_SIZE = 100;
   std::array<char, BUFF_SIZE> recv_buff{};
+  int recved_buffer_size{};
   using namespace game_protocol;
-  PacketHeader header_buffer{};
+
   while (true) {
-    return_value = recv(server_sock, reinterpret_cast<char*>(&header_buffer),
-                        sizeof(PacketHeader), MSG_WAITALL);
+    // ë°ì´í„° ë°›ê¸°
+    return_value =
+        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
+             recv_buff.size() - recved_buffer_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
-        // ¼ö½Å ¹®Á¦
+        // ìˆ˜ì‹  ë¬¸ì œ
         err_display(" : recv error");
         return -1;
       }
       case 0: {
-        // Á¢¼Ó Á¾·á ½Ã Ã³¸®
+        // ì ‘ì† ì¢…ë£Œ ì‹œ ì²˜ë¦¬
         err_display(" : disconnected");
         return -1;
       }
     }
-    switch (static_cast<PKT_CAT>(header_buffer.header)) {
-      case PKT_CAT::PLAYER_INFO: {
-        return_value = recv(server_sock, recv_buff.data(), sizeof(PlayerInfo),
-                            MSG_WAITALL);
-        auto player = PlayerInfo{};
-        std::memcpy(&player, recv_buff.data(), sizeof(PlayerInfo));
-        std::println(wow, "PLAYER_INFO recv  {} = {}:{}", return_value,
-                     player.x, player.y);
-        wow.emit();
-        break;
+    // ë°›ì€ ë°ì´í„° í¬ê¸° ë°˜ì˜
+    recved_buffer_size += return_value;
+
+    for (bool unfinished = true; unfinished;) {
+      // ë°›ì€ ë°ì´í„° ì²˜ë¦¬
+      switch (static_cast<PKT_CAT>(recv_buff[0])) {
+        case PKT_CAT::PLAYER_INFO: {
+          // ë°ì´í„°ë¥¼ ë‹¤ ë°›ì•˜ëŠ”ì§€ í™•ì¸
+          if (sizeof(PlayerInfoPacket) * 2 > recved_buffer_size) {
+            unfinished = false;
+            break;
+          }
+
+          // ë©”ì„¸ì§€ë¡œ ë³´ë‚¼ ì •ë³´ êµ¬ì¡°ì²´ í• ë‹¹ë°›ê³  ë°›ì€ ë°ì´í„° ì½ê¸°
+          PlayerInfoPacket* my_player_info_packet =
+              reinterpret_cast<PlayerInfoPacket*>(recv_buff.data());
+
+          PlayerInfoPacket* other_player_info_packet =
+              reinterpret_cast<PlayerInfoPacket*>(
+                  std::next(recv_buff.data(), sizeof(PlayerInfoPacket)));
+
+          PlayerInfoMSG* player_infoes =
+              new PlayerInfoMSG{.my_player = my_player_info_packet->info,
+                                .other_player = other_player_info_packet->info};
+          {
+            // ìœˆë„ìš°ë¡œ ë³´ë‚´ê¸°
+            ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                          static_cast<std::int8_t>(PKT_CAT::PLAYER_INFO),
+                          reinterpret_cast<LPARAM>(player_infoes));
+          }
+#ifndef NDEBUG
+          std::println(wow, "PLAYER_INFO recv  {} = ", return_value);
+          wow.emit();
+#endif  // !NDEBUG
+
+          // ë²„í¼ ì²˜ë¦¬
+          std::memcpy(recv_buff.data(),
+                      std::next(recv_buff.data(), sizeof(PlayerInfoPacket) * 2),
+                      recved_buffer_size - sizeof(PlayerInfoPacket) * 2);
+          recved_buffer_size -= sizeof(PlayerInfoPacket) * 2;
+          break;
+        }
+        case PKT_CAT::CHANGE_MAP: {
+          // ë°ì´í„° ë‹¤ ë°›ì•˜ëŠ”ì§€ í™•ì¸
+          if (sizeof(MapInfoPacket) > recved_buffer_size) {
+            unfinished = false;
+            break;
+          }
+
+          // ë©”ì„¸ì§€ë¡œ ë³´ë‚¼ ì •ë³´ êµ¬ì¡°ì²´ í• ë‹¹ ë°›ê³  ë°›ì€ ë°ì´í„° ì½ê¸°
+          MapInfoPacket* map_info_packet =
+              reinterpret_cast<MapInfoPacket*>(recv_buff.data());
+
+          // ìœˆë„ìš°ë¡œ ë³´ë‚´ê¸°
+          ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                        static_cast<std::int8_t>(PKT_CAT::CHANGE_MAP),
+                        (LPARAM)map_info_packet->info.mapNum);
+
+#ifndef NDEBUG
+          std::println(wow, "MapInfo recv  {} = {}", return_value,
+                       map_info_packet->info.mapNum);
+          wow.emit();
+#endif  // !NDEBUG
+
+          // ë²„í¼ ì²˜ë¦¬
+          std::memcpy(recv_buff.data(),
+                      std::next(recv_buff.data(), sizeof(MapInfoPacket)),
+                      recved_buffer_size - sizeof(MapInfoPacket));
+          recved_buffer_size -= sizeof(MapInfoPacket);
+          break;
+        }
+        default: {
+          err_display(" : recv buffer handle error");
+          break;
+        }
       }
-      case PKT_CAT::CHANGE_MAP: {
-        return_value =
-            recv(server_sock, recv_buff.data(), sizeof(MapInfo), MSG_WAITALL);
-        auto change_map = MapInfo{};
-        std::memcpy(&change_map, recv_buff.data(), sizeof(MapInfo));
-        std::println(wow, "MapInfo recv  {} = {}", return_value,
-                     change_map.mapNum);
-        wow.emit();
-        break;
-      }
-      default:
-        break;
     }
   }
   return 0;
@@ -349,15 +419,15 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
   buffer.reserve(3);
 
   while (true) {
-    // ÀÔ·Â ¿©ºÎ È®ÀÎ
+    // ì…ë ¥ ì—¬ë¶€ í™•ì¸
     is_pressed_left = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
     is_pressed_right = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
     is_pressed_space = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    // ¹öÆÛ Á¤¸®
+    // ë²„í¼ ì •ë¦¬
     buffer.clear();
 
-    // À¯È¿ ÀÔ·Â Ã³¸®
+    // ìœ íš¨ ì…ë ¥ ì²˜ë¦¬
     if (!(is_pressed_left && is_pressed_right)) {
       if (is_pressed_left) {
         buffer.push_back('0');
@@ -370,17 +440,20 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       buffer.push_back(' ');
     }
 
-    // ´­¸° °ÍÀÌ ¾øÀ¸¸é ³Ñ±è
+    // ëˆŒë¦° ê²ƒì´ ì—†ìœ¼ë©´ ë„˜ê¹€
     if (buffer.empty()) {
       std::this_thread::yield();
       continue;
     }
 
-    // Àü¼Û ¹× ·Î±×
+    // ì „ì†¡ ë° ë¡œê·¸
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-    std::println(wow, "send {} = {}:{}", return_value, std::string_view{buffer},
-                 buffer.size());
+#ifndef NDEBUG
+    std::println(wow, "send {} = {}:{}", return_value,
+                 std::string_view{buffer.data(), buffer.size()}, buffer.size());
     wow.emit();
+    wow.flush();
+#endif  // !NDEBUG
 
     switch (return_value) {
       case SOCKET_ERROR: {
@@ -393,13 +466,13 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       }
     }
 
-    // ÀÔ·Â ´ë±â
+    // ì…ë ¥ ëŒ€ê¸°
     Sleep(1000 / 60);
   }
   return 0;
 }
 
-//--- CImage °ü·Ã º¯¼ö ¼±¾ğ
+//--- CImage ê´€ë ¨ ë³€ìˆ˜ ì„ ì–¸
 CImage Snowtile;
 CImage Snowbg;
 CImage Desertbg;
@@ -423,18 +496,18 @@ static int spriteY2 = 0;
 static int spriteWidth = 30;
 static int spriteHeight = 0;
 static int spriteHeight2 = 0;
-
-// Å¸ÀÌ¸Ó Äİ¹é
+void Update();
+// íƒ€ì´ë¨¸ ì½œë°±
 void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   switch (idEvent) {
     case 2: {
       if ((GetAsyncKeyState('s') & 0x8000) ||
           (GetAsyncKeyState('S') & 0x8000)) {
-        // Á¢¼Ó ½Ãµµ
+        // ì ‘ì† ì‹œë„
         int return_value{};
         SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (INVALID_SOCKET == server_sock) {
-          err_quit("socket() È£Ãâ");
+          err_quit("socket() í˜¸ì¶œ");
         }
 
         sockaddr_in serveraddr{.sin_family = AF_INET,
@@ -443,36 +516,44 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
             inet_pton(AF_INET, game_protocol::g_server_address.data(),
                       &serveraddr.sin_addr);
         if (SOCKET_ERROR == return_value) {
-          err_quit("À¯È¿ÇÏÁö ¾ÊÀº ÁÖ¼Ò°¡ ÀÔ·ÂµÇ¾ú½À´Ï´Ù.");
+          err_quit("ìœ íš¨í•˜ì§€ ì•Šì€ ì£¼ì†Œê°€ ì…ë ¥ë˜ì—ˆìŠµë‹ˆë‹¤.");
         }
 
         return_value =
             connect(server_sock, reinterpret_cast<sockaddr const*>(&serveraddr),
                     sizeof(serveraddr));
         if (return_value == SOCKET_ERROR) {
-          err_quit("connect() È£Ãâ");
+          err_quit("connect() í˜¸ì¶œ");
         }
 
-        // Á¢¼Ó ¼º°ø½Ã ClientSend, CliendRecv »ı¼º
+        // ì ‘ì† ì„±ê³µì‹œ ClientSend, CliendRecv ìƒì„±
         g_hSendThread =
             CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
 
-        g_hRecvThread =
-            CreateThread(NULL, 0, RecvClient, (LPVOID)server_sock, 0, NULL);
+        auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
+                                              .window_handle = hWnd};
+        g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
+        recvParam = nullptr;
 
         map_num = 1;
         InitPlayer(g_player);
-        // ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ   init À§Ä¡¿¡ warkingÀ¸·Î ÇÃ·¹ÀÌ¾î Ãâ·ÂµÇ´ÂÁö È®ÀÎ¿ë
+        // ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡   init ìœ„ì¹˜ì—
+        // warkingìœ¼ë¡œ í”Œë ˆì´ì–´ ì¶œë ¥ë˜ëŠ”ì§€ í™•ì¸ìš©
         spriteX = 0;
         spriteY = 24;
         spriteHeight = 24;
-        // ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ¤Ñ   init À§Ä¡¿¡ warkingÀ¸·Î ÇÃ·¹ÀÌ¾î Ãâ·ÂµÇ´ÂÁö È®ÀÎ¿ë
+        // ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡ã…¡   init ìœ„ì¹˜ì—
+        // warkingìœ¼ë¡œ í”Œë ˆì´ì–´ ì¶œë ¥ë˜ëŠ”ì§€ í™•ì¸ìš©
         InitMap(map, map0);
         InitEnemy(map);
         InitItems(map);
         KillTimer(hWnd, 2);
+        SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
       }
-
+      break;
+    }
+    case 3: {
+      Update();
       break;
     }
   }
@@ -480,7 +561,7 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   InvalidateRect(hWnd, NULL, FALSE);
 }
 
-// ¸ŞÀÎ ÇÔ¼ö
+// ë©”ì¸ í•¨ìˆ˜
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                          LPARAM lParam) {
@@ -493,7 +574,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
   static int playerFrameIndex = 0;
 
   switch (message) {
-    case WM_CREATE:
+    case WM_CREATE: {
       Snowtile.Load(L"snowtile.png");
       Snowbg.Load(L"SnowBg.png");
       cannon.Load(L"Cannon.png");
@@ -512,7 +593,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       SetTimer(hWnd, 2, 1000 / 60, (TIMERPROC)TimerProc);
       break;
-    case WM_CHAR:
+    }
+    case WM_CHAR: {
       switch (wParam) {
         case 'Q':
         case 'q':
@@ -520,6 +602,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           break;
       }
       break;
+    }
     case WM_PAINT: {
       hDC = BeginPaint(hWnd, &ps);
       GetClientRect(hWnd, &rt);
@@ -527,8 +610,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       hBitmap = CreateCompatibleBitmap(hDC, BOARD_WIDTH, BOARD_HEIGHT);
       SelectObject(mDC, (HBITMAP)hBitmap);
 
-      //--- ¸ğµç ±×¸®±â¸¦ ¸Ş¸ğ¸® DC¿¡ÇÑ´Ù.  ---> ¹Ù²Û ºÎºĞ: CImage º¯¼ö´Â
-      // Àü¿ªº¯¼ö·Î ¼±¾ğÇÏ¿© ÇÔ¼öÀÇ ÀÎÀÚ·Î º¸³»Áö ¾Êµµ·Ï ÇÑ´Ù.
+      //--- ëª¨ë“  ê·¸ë¦¬ê¸°ë¥¼ ë©”ëª¨ë¦¬ DCì—í•œë‹¤.  ---> ë°”ê¾¼ ë¶€ë¶„: CImage ë³€ìˆ˜ëŠ”
+      // ì „ì—­ë³€ìˆ˜ë¡œ ì„ ì–¸í•˜ì—¬ í•¨ìˆ˜ì˜ ì¸ìë¡œ ë³´ë‚´ì§€ ì•Šë„ë¡ í•œë‹¤.
       if (map_num == 0)
         startImage.Draw(mDC, 0, 0, GRID * 12, GRID * 15);
       else if (map_num == 1) {
@@ -537,15 +620,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        //DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth, spriteHeight);       // ÇÃ·¹ÀÌ¾î2 Ãâ·Â
+        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
+        // spriteHeight);       // í”Œë ˆì´ì–´2 ì¶œë ¥
         DrawItem(mDC);
       } else if (map_num == 2) {
         DrawDesertBg(mDC);
         DrawDesertTile(mDC);
         DrawEnemies(mDC);
         DrawBullets(mDC);
-        DrawSprite(mDC, g_player,spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth, spriteHeight);
+        DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
+        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
+        // spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 3) {
         DrawForestBg(mDC);
@@ -553,17 +638,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth, spriteHeight);
+        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
+        // spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 4) {
         endImage.Draw(mDC, BOARD_WIDTH - GRID * 13, BOARD_HEIGHT - GRID * 17,
                       GRID * 12, GRID * 15);
       }
 
-      // ¸Ş¸ğ¸® DC¿¡¼­ È­¸é DC·Î ±×¸²À» º¹»ç
-      // #1 ¸Ê ÀüÃ¼¸¦ ±×¸®±â
+      // ë©”ëª¨ë¦¬ DCì—ì„œ í™”ë©´ DCë¡œ ê·¸ë¦¼ì„ ë³µì‚¬
+      // #1 ë§µ ì „ì²´ë¥¼ ê·¸ë¦¬ê¸°
       // BitBlt(hDC, 0, 0, BOARD_WIDTH, BOARD_HEIGHT, mDC, 0, 0, SRCCOPY);
-      // #2 ÇÃ·¹ÀÌ¾î ÁÖº¯ÀÇ ¿µ¿ªÀ» À©µµ¿ì ÀüÃ¼·Î È®´ë
+      // #2 í”Œë ˆì´ì–´ ì£¼ë³€ì˜ ì˜ì—­ì„ ìœˆë„ìš° ì „ì²´ë¡œ í™•ëŒ€
       int stretchWidth = rt.right;
       int stretchHeight = rt.bottom;
       int sourceWidth = WINDOW_WIDTH;
@@ -591,7 +677,50 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       EndPaint(hWnd, &ps);
       break;
     }
-    case WM_DESTROY:
+    case WM_NETWORK_INFORM: {
+      using namespace game_protocol;
+
+      std::int8_t curr_cat = LOBYTE(wParam);
+      // recvì—ì„œ ë³´ë‚¸ ì •ë³´ ì²˜ë¦¬
+      switch (static_cast<PKT_CAT>(curr_cat)) {
+        case PKT_CAT::PLAYER_INFO: {
+          {
+            PlayerInfoMSG* player_infoes =
+                reinterpret_cast<PlayerInfoMSG*>(lParam);
+
+            g_player.x = player_infoes->my_player.x;
+            g_player.y = player_infoes->my_player.y;
+
+            otherPlayer.x = player_infoes->other_player.x;
+            otherPlayer.y = player_infoes->other_player.y;
+          }
+
+#ifndef NDEBUG
+          std::println(
+              wow, "player window get my x,y : ({}, {}), other x,y : ({}, {})",
+              g_player.x, g_player.y, otherPlayer.x, otherPlayer.y);
+          wow.emit();
+          wow.flush();
+#endif  // !NDEBUG
+
+          break;
+        }
+        case PKT_CAT::CHANGE_MAP: {
+          // ë§µ ë³€ê²½
+          int mapNum = LOWORD(lParam);
+
+#ifndef NDEBUG
+          std::println(wow, "mapNum window get {}", mapNum);
+          wow.emit();
+          wow.flush();
+#endif  // !NDEBUG
+          break;
+        }
+      }
+
+      break;
+    }
+    case WM_DESTROY: {
       Snowtile.Destroy();
       Snowbg.Destroy();
       cannon.Destroy();
@@ -609,18 +738,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       // KillTimer(hWnd, 2);
       PostQuitMessage(0);
       break;
-    default:
+    }
+    default: {
       return DefWindowProc(hWnd, message, wParam, lParam);
+    }
   }
   return 0;
 }
 
-// Å°ÀÔ·Â
+// í‚¤ì…ë ¥
 bool spaceKeyReleased = true;
 
-// ¸Ê
+// ë§µ
 void DrawSnowTile(HDC hDC) {
-  // Ä­´ç 96x96
+  // ì¹¸ë‹¹ 96x96
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
       int tileType = tile0[y][x];
@@ -693,7 +824,7 @@ void DrawSnowTile(HDC hDC) {
   }
 }
 void DrawDesertTile(HDC hDC) {
-  // Ä­´ç 32x32
+  // ì¹¸ë‹¹ 32x32
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
       int tileType = tile1[y][x];
@@ -764,7 +895,7 @@ void DrawForestBg(HDC hDC) {
 }
 
 void DrawForestTile(HDC hDC) {
-  // Ä­´ç 64x64
+  // ì¹¸ë‹¹ 64x64
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
       int tileType = tile2[y][x];
@@ -802,7 +933,7 @@ void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]) {
     }
   }
 }
-// ÇÃ·¹ÀÌ¾î
+// í”Œë ˆì´ì–´
 void InitPlayer(Player& player) {
   player.x = (MAP_WIDTH - 7) * GRID;
   player.y = (MAP_HEIGHT - 4) * GRID;
@@ -812,8 +943,8 @@ void InitPlayer(Player& player) {
   player.face = 0;
 }
 
-void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y, const int& width,
-                const int& height) {
+void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y,
+                const int& width, const int& height) {
   HDC hmemDC = CreateCompatibleDC(hDC);
   HBITMAP oldBitmap = (HBITMAP)SelectObject(hmemDC, spriteSheetMask);
   if (player.face == 0) {
@@ -835,7 +966,7 @@ void DrawSprite(HDC hDC, const Player& player, const int& x, const int& y, const
   DeleteDC(hmemDC);
 }
 
-// ¾ÆÀÌÅÛ
+// ì•„ì´í…œ
 void InitItems(int map[MAP_HEIGHT][MAP_WIDTH]) {
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
@@ -864,11 +995,11 @@ void DrawItem(HDC hDC) {
 }
 
 void DeleteAllItems() { g_items.clear(); }
-// Àû
+// ì 
 void InitEnemy(int map[MAP_HEIGHT][MAP_WIDTH]) {
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
-      if (map[y][x] == 4) {  // Àû
+      if (map[y][x] == 4) {  // ì 
         GenerateEnemy(x, y);
       }
     }
@@ -904,12 +1035,12 @@ void DrawBullets(HDC hdc) {
 
 void DeleteAllBullets() { g_bullets.clear(); }
 
-// recv¹ŞÀº µ¥ÀÌÅÍ·Î Ãâ·Â Á¤º¸ ¾÷µ¥ÀÌÆ®, ¼ö½Å ¹öÆÛ·Î Àü´Ş¹ŞÀº µ¥ÀÌÅÍ ÇØ¼®
+// recvë°›ì€ ë°ì´í„°ë¡œ ì¶œë ¥ ì •ë³´ ì—…ë°ì´íŠ¸, ìˆ˜ì‹  ë²„í¼ë¡œ ì „ë‹¬ë°›ì€ ë°ì´í„° í•´ì„
 void Update() {
   for (auto& item : g_items) {
-    // itemÀÇ disableÀ» Àü´Ş¹ŞÀº disable·Î ¾÷µ¥ÀÌÆ®
+    // itemì˜ disableì„ ì „ë‹¬ë°›ì€ disableë¡œ ì—…ë°ì´íŠ¸
   }
-  // ¸Ê º¯°æÀ» Àü´Ş¹ŞÀ¸¸é Ãâ·Â Á¤º¸ ÃÊ±âÈ­    ex) if(header == 2)
+  // ë§µ ë³€ê²½ì„ ì „ë‹¬ë°›ìœ¼ë©´ ì¶œë ¥ ì •ë³´ ì´ˆê¸°í™”    ex) if(header == 2)
   /*
   if (map_num == 1) InitMap(map, map1);
   else if (map_num == 2) InitMap(map, map2);
@@ -921,20 +1052,20 @@ void Update() {
   InitEnemy(map);
   InitItems(map);*/
 
-  if (map_num == 4 /*|| °ÔÀÓ Á¾·á(¿¬°á ²÷±è)*/) {
-    // 4¹øÂ° ¸Ê ¶Ç´Â °ÔÀÓ Á¾·á¸¦ Àü´Ş¹ŞÀ¸¸é Á¾·á½Ã ÇÊ¿äÇÑ Á¤º¸·Î ¾÷µ¥ÀÌÆ®
+  if (map_num == 4 /*|| ê²Œì„ ì¢…ë£Œ(ì—°ê²° ëŠê¹€)*/) {
+    // 4ë²ˆì§¸ ë§µ ë˜ëŠ” ê²Œì„ ì¢…ë£Œë¥¼ ì „ë‹¬ë°›ìœ¼ë©´ ì¢…ë£Œì‹œ í•„ìš”í•œ ì •ë³´ë¡œ ì—…ë°ì´íŠ¸
   }
 
-  // ½ÂÆĞ È®ÀÎÇÏ´Â ÇØ¼®µµ ³Ö¾î¾ßÇÔ
+  // ìŠ¹íŒ¨ í™•ì¸í•˜ëŠ” í•´ì„ë„ ë„£ì–´ì•¼í•¨
 
-  // ¿©±âºÎÅÍ ÇÃ·¹ÀÌ¾î Ãâ·ÂÀ» À§ÇÑ ½ºÇÁ¶óÀÌÆ® ¿ÀÇÁ¼Â ¾÷µ¥ÀÌÆ®
-  // 1. dx, dy¸¦ ¸â¹ö¿¡¼­ Á¦°ÅÇßÀ¸¹Ç·Î ÇÊ¿äÇÑ ºÎºĞÀº »óÅÂ¸¦ Ãß°¡ÇÔ server
-  // Å¸ÀÌ¸Ó½º·¹µå¿¡¼­ ÇÃ·¹ÀÌ¾î »óÅÂ¸¦ Àü¼ÛÇÒ ¶§, ¸ğµç »óÅÂ¸¦ º¸³¾ ÇÊ¿ä°¡
-  // ¾ø¾îº¸ÀÓ
-  // 2. °¢ ÇÃ·¹ÀÌ¾î Àü¿ë ½ºÇÁ¶óÀÌÆ® ¿ÀÇÁ¼Â µÎ °³
+  // ì—¬ê¸°ë¶€í„° í”Œë ˆì´ì–´ ì¶œë ¥ì„ ìœ„í•œ ìŠ¤í”„ë¼ì´íŠ¸ ì˜¤í”„ì…‹ ì—…ë°ì´íŠ¸
+  // 1. dx, dyë¥¼ ë©¤ë²„ì—ì„œ ì œê±°í–ˆìœ¼ë¯€ë¡œ í•„ìš”í•œ ë¶€ë¶„ì€ ìƒíƒœë¥¼ ì¶”ê°€í•¨ server
+  // íƒ€ì´ë¨¸ìŠ¤ë ˆë“œì—ì„œ í”Œë ˆì´ì–´ ìƒíƒœë¥¼ ì „ì†¡í•  ë•Œ, ëª¨ë“  ìƒíƒœë¥¼ ë³´ë‚¼ í•„ìš”ê°€
+  // ì—†ì–´ë³´ì„
+  // 2. ê° í”Œë ˆì´ì–´ ì „ìš© ìŠ¤í”„ë¼ì´íŠ¸ ì˜¤í”„ì…‹ ë‘ ê°œ
 
-  // ÇÃ·¹ÀÌ¾î1ÀÇ ½ºÇÁ¶óÀÌÆ® ¿ÀÇÁ¼Â ¾÷µ¥ÀÌÆ®
-  if (g_player.isWarking) {  // °È±â ½ºÇÁ¶óÀÌÆ®
+  // í”Œë ˆì´ì–´1ì˜ ìŠ¤í”„ë¼ì´íŠ¸ ì˜¤í”„ì…‹ ì—…ë°ì´íŠ¸
+  if (g_player.isWarking) {  // ê±·ê¸° ìŠ¤í”„ë¼ì´íŠ¸
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
       spriteY = 24;
@@ -946,8 +1077,8 @@ void Update() {
     spriteX = 0;
     spriteY = 116;
     spriteHeight = 22;
-    /*if (g_player.jumpSpeed == -20) { Ç®Â÷ÁöµÇ¸é ½ºÇÁ¶óÀÌÆ® ¹Ù²Ş ÀÌ°Íµµ »óÅÂ
-    º¯¼ö·Î recv¹Ş´Â°Ç? bool fullcharge spriteX = 30;
+    /*if (g_player.jumpSpeed == -20) { í’€ì°¨ì§€ë˜ë©´ ìŠ¤í”„ë¼ì´íŠ¸ ë°”ê¿ˆ ì´ê²ƒë„ ìƒíƒœ
+    ë³€ìˆ˜ë¡œ recvë°›ëŠ”ê±´? bool fullcharge spriteX = 30;
     }*/
   }
 
@@ -983,8 +1114,8 @@ void Update() {
     spriteHeight = 24;
   }
 
-  // ÇÃ·¹ÀÌ¾î2ÀÇ ½ºÇÁ¶óÀÌÆ® ¿ÀÇÁ¼Â ¾÷µ¥ÀÌÆ®
-  if (otherPlayer.isWarking) {  // °È±â ½ºÇÁ¶óÀÌÆ®
+  // í”Œë ˆì´ì–´2ì˜ ìŠ¤í”„ë¼ì´íŠ¸ ì˜¤í”„ì…‹ ì—…ë°ì´íŠ¸
+  if (otherPlayer.isWarking) {  // ê±·ê¸° ìŠ¤í”„ë¼ì´íŠ¸
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
       spriteY2 = 24;
@@ -996,7 +1127,7 @@ void Update() {
     spriteX2 = 0;
     spriteY2 = 116;
     spriteHeight2 = 22;
-    /*if (otherPlayer.jumpSpeed == -20) { Ç®Â÷ÁöµÇ¸é ½ºÇÁ¶óÀÌÆ® ¹Ù²Ş
+    /*if (otherPlayer.jumpSpeed == -20) { í’€ì°¨ì§€ë˜ë©´ ìŠ¤í”„ë¼ì´íŠ¸ ë°”ê¿ˆ
       spriteX2 = 30;
     }*/
   }

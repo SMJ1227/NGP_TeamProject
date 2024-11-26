@@ -459,4 +459,5 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-Client/looog.txt
+/Client/looog.txt
+/Client/*.log
