@@ -314,7 +314,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
     // 데이터 받기
     return_value =
         recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size(), 0);
+             recv_buff.size() - recved_buffer_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -448,9 +448,12 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
+#ifndef NDEBUG
     std::println(wow, "send {} = {}:{}", return_value,
                  std::string_view{buffer.data(), buffer.size()}, buffer.size());
     wow.emit();
+    wow.flush();
+#endif  // !NDEBUG
 
     switch (return_value) {
       case SOCKET_ERROR: {
@@ -493,7 +496,7 @@ static int spriteY2 = 0;
 static int spriteWidth = 30;
 static int spriteHeight = 0;
 static int spriteHeight2 = 0;
-
+void Update();
 // 타이머 콜백
 void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   switch (idEvent) {
@@ -545,8 +548,12 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
         InitEnemy(map);
         InitItems(map);
         KillTimer(hWnd, 2);
+        SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
       }
-
+      break;
+    }
+    case 3: {
+      Update();
       break;
     }
   }
@@ -567,7 +574,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
   static int playerFrameIndex = 0;
 
   switch (message) {
-    case WM_CREATE:
+    case WM_CREATE: {
       Snowtile.Load(L"snowtile.png");
       Snowbg.Load(L"SnowBg.png");
       cannon.Load(L"Cannon.png");
@@ -586,7 +593,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       SetTimer(hWnd, 2, 1000 / 60, (TIMERPROC)TimerProc);
       break;
-    case WM_CHAR:
+    }
+    case WM_CHAR: {
       switch (wParam) {
         case 'Q':
         case 'q':
@@ -594,6 +602,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           break;
       }
       break;
+    }
     case WM_PAINT: {
       hDC = BeginPaint(hWnd, &ps);
       GetClientRect(hWnd, &rt);
@@ -690,26 +699,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           std::println(
               wow, "player window get my x,y : ({}, {}), other x,y : ({}, {})",
               g_player.x, g_player.y, otherPlayer.x, otherPlayer.y);
+          wow.emit();
+          wow.flush();
 #endif  // !NDEBUG
 
           break;
         }
         case PKT_CAT::CHANGE_MAP: {
+          // 맵 변경
           int mapNum = LOWORD(lParam);
+
 #ifndef NDEBUG
           std::println(wow, "mapNum window get {}", mapNum);
+          wow.emit();
+          wow.flush();
 #endif  // !NDEBUG
           break;
         }
       }
 
-#ifndef NDEBUG
-      wow.emit();
-#endif  // !NDEBUG
-
       break;
     }
-    case WM_DESTROY:
+    case WM_DESTROY: {
       Snowtile.Destroy();
       Snowbg.Destroy();
       cannon.Destroy();
@@ -727,8 +738,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       // KillTimer(hWnd, 2);
       PostQuitMessage(0);
       break;
-    default:
+    }
+    default: {
       return DefWindowProc(hWnd, message, wParam, lParam);
+    }
   }
   return 0;
 }
