@@ -8,9 +8,8 @@
 #include <iostream>
 #include <vector>
 
-char clientCount = 0;
-char matchCount = 0;
 CRITICAL_SECTION cs;
+HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
 typedef struct Player {
   int x, y;
@@ -127,11 +126,14 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
   printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
-
+  
   while (1) {
+    // 다른 스레드 작동중 대기
+    WaitForSingleObject(hEvent, INFINITE);
+    ResetEvent(hEvent);
     // 벡터의 유효한 범위 내에서, 현재 매치의 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는지 비교한다, 다르다면 감소
-    EnterCriticalSection(&cs);
+    
     while (matchNum >= 0 && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
         // 디버그옹 출력
@@ -141,45 +143,42 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
           matchNum, g_matches[matchNum].matchNum);
       matchNum--;
     }
-    LeaveCriticalSection(&cs);
-
     // 디버그용 출력
     // printf("\nrecvThread 루프 시작, matchNum: %d, playerNum: %d\n", matchNum, playerNum); 
     // 데이터 받기
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
-      EnterCriticalSection(&cs);
       closeSocketFunc(client_sock, matchNum, playerNum);
-      LeaveCriticalSection(&cs);
+      SetEvent(hEvent);
       break;
-    } else if (retval == 0)
+    } else if (retval == 0) {
+      SetEvent(hEvent);
       break;
-
+    }
+      
     // 받은 데이터 출력
     buf[retval] = '\0';
-    
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
+      printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
-      EnterCriticalSection(&cs);
       printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port), g_matches[matchNum].p2);
-      LeaveCriticalSection(&cs);
     }
 
     if (retval == SOCKET_ERROR) {
       err_display("send()");
+      SetEvent(hEvent);
       break;
     } 
+    // 이벤트 해제
+    SetEvent(hEvent);
   }
-
   // 소켓 닫기
-  EnterCriticalSection(&cs);
   closesocket(client_sock);
   printf("[TCP 서버] 클라이언트 종료: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
-  LeaveCriticalSection(&cs);
   return 0;
 }
 
@@ -196,22 +195,26 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
   // 타이머 간격을 설정 (1/30초)
   LARGE_INTEGER liDueTime;  // LARGE_INTEGER는 SetWaitableTimer에서 요구함
   liDueTime.QuadPart = -333300;
-
+  
   while (true) {
+    // 타이머 이벤트가 발생할 때까지 대기
+    // 1/30초 타이머 대기를 동기화보다 먼저
+    WaitForSingleObject(hTimer, INFINITE);
+    // 다른 스레드 작동 중 대기
+    WaitForSingleObject(hEvent, INFINITE);
+    // 이벤트 설정
+    ResetEvent(hEvent);
     if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
       printf("타이머 설정 실패\n");
       CloseHandle(hTimer);
+      SetEvent(hEvent);
       return 1;
     }
-
-    // 타이머 이벤트가 발생할 때까지 대기
-    WaitForSingleObject(hTimer, INFINITE);
-
     // 매치 데이터 업데이트
-    EnterCriticalSection(&cs);
+    
     // 플레이어 좌표 이동
     //updatePlayer(matchNum);
-
+        
     // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는 지 비교한다, 다르다면 감소
     while (!(matchNum < 0) && matchNum < g_matches.size() &&
@@ -257,16 +260,17 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       }
       int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
       if (retval == SOCKET_ERROR) {
-        printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
-               WSAGetLastError());
+        //printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
+               //WSAGetLastError());
       } else {
-        printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\r", i, retval);
+        //printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\r", i, retval);
       }
     }
-    LeaveCriticalSection(&cs);
+    // 이벤트 해제
+    SetEvent(hEvent);
     // 필요에 따라 타이머 중단 조건을 추가.
   }
-
+  
   CloseHandle(hTimer);
   return 0;
 }
@@ -324,14 +328,11 @@ int main(int argc, char* argv[]) {
     /*printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr,
            ntohs(clientaddr.sin_port));*/
     // 매치 생성
-    EnterCriticalSection(&cs);
     if (g_matches.size() == 0 ||
         (!g_matches.empty() && g_matches.back().client_sock[0] != NULL &&
          g_matches.back().client_sock[1] != NULL))
       g_matches.push_back(MATCH());
-    LeaveCriticalSection(&cs);
     // 플레이어1 스레드, 타이머 스레드 생성
-    EnterCriticalSection(&cs);
     if (g_matches.back().client_sock[0] == NULL) {
       rParam->playerNum = 0;
       rParam->matchNum = g_matches.size() - 1;
@@ -346,24 +347,25 @@ int main(int argc, char* argv[]) {
       printf("%zu번 매치 대기중.. 클라이언트 수: %d\n", g_matches.size() - 1,
              1);
       // 타이머 스레드 생성
-      hThread =
+      g_matches.back().timerThread =
           CreateThread(NULL, 0, timerProcessClient, matchNumParam, 0, NULL);
     }
     // 플레이어2 스레드 생성
+    
     else if (g_matches.back().client_sock[0] != NULL &&
              g_matches.back().client_sock[1] == NULL) {
+      printf("2번 반복문 진입\n");
       rParam->playerNum = 1;
       rParam->matchNum = g_matches.size() - 1;
       g_matches.back().client_sock[1] = rParam->client_sock;
       // 디버그용 출력
       printf("%d번째 매치 %d번째 플레이어 스레드 생성\n", rParam->matchNum,
              rParam->playerNum);
-      (g_matches.end() - 1)->recvThread[1] =
+      g_matches.back().recvThread[1] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
-      matchCount++;
-      clientCount = 0;
     }
-    LeaveCriticalSection(&cs);
+    // 이벤트 해제
+    SetEvent(hEvent);
   }
 
   // 소켓 닫기
