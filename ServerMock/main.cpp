@@ -9,38 +9,33 @@
 #include <thread>
 
 #include "../Client/network_util.hpp"
-#include "../Client/protocol.hpp"
+#include "../Server/sendParam.hpp"
 
 namespace server_mock {
 int constexpr BUF_SIZE = 100;
 int constexpr SERVER_PORT = 9000;
 
 int send_player_info(SOCKET player_1_sock) {
-  auto constexpr p_size = sizeof(game_protocol::PlayerInfoPacket);
-  std::array<char, p_size * 2> buf{};
-  auto temp_player_1_info =
-      game_protocol::PlayerInfoPacket{.info{.x = 10,
-                                            .y = 15,
-                                            .isCharging = true,
-                                            .isJumping = false,
-                                            .isSliding = true,
-                                            .damaged = false,
-                                            .face = true,
-                                            .isItemDisable = false,
-                                            .bulletX = 20,
-                                            .bulletY = 25}};
+  using HeaderType = sendParam::PKT_CAT;
+  using InfoType = sendParam::sendParam;
+  auto constexpr info_size = sizeof(HeaderType);
+  auto constexpr header_size = sizeof(InfoType);
+  auto constexpr packet_size = header_size + info_size;
 
-  auto temp_player_2_info =
-      game_protocol::PlayerInfoPacket{.info{.x = 3,
-                                            .y = 5,
-                                            .isCharging = true,
-                                            .isJumping = false,
-                                            .isSliding = true,
-                                            .damaged = false,
-                                            .face = true,
-                                            .isItemDisable = false,
-                                            .bulletX = 20,
-                                            .bulletY = 25}};
+  std::array<char, packet_size * 2> buf{};
+  auto temp_player_1_info = InfoType{
+      .x = 10,
+      .y = 15,
+      .acting = 1,
+      .face = true,
+  };
+
+  auto temp_player_2_info = InfoType{
+      .x = 3,
+      .y = 10,
+      .acting = 1,
+      .face = false,
+  };
 
   std::size_t packet_size = p_size * 2;
   std::memcpy(buf.data(), &temp_player_1_info, p_size);
@@ -74,10 +69,10 @@ void recv_handler(SOCKET client_sock) {
     std::print("{}", std::string_view{buf});
     int packet_size{};
 
-    if (rand() % 2) {
+    if (true) {
       return_value = send_player_info(client_sock);
     } else {
-      auto temp_map_info = game_protocol::MapInfoPacket{.info = 4};
+      auto temp_map_info = sendParam::PKT_CAT::CHANGE_MAP;
       packet_size = sizeof(temp_map_info);
       std::memcpy(buf.data(), &temp_map_info, packet_size);
       return_value = send(client_sock, buf.data(), packet_size, 0);

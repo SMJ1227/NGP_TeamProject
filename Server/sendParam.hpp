@@ -17,6 +17,4 @@ enum class PKT_CAT : std::int8_t { PLAYER_INFO = 1, CHANGE_MAP = 2 };
 
 }  // namespace sendParam
 
-#pragma pack(pop)
-
 #endif
