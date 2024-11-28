@@ -161,7 +161,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     buf[retval] = '\0';
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
-      printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);
+      //printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
@@ -194,27 +194,30 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
   // 타이머 간격을 설정 (1/30초)
   LARGE_INTEGER liDueTime;  // LARGE_INTEGER는 SetWaitableTimer에서 요구함
-  liDueTime.QuadPart = -333300;
-  
+  liDueTime.QuadPart = -999900;
+
   while (true) {
-    // 타이머 이벤트가 발생할 때까지 대기
-    // 1/30초 타이머 대기를 동기화보다 먼저
-    WaitForSingleObject(hTimer, INFINITE);
-    // 다른 스레드 작동 중 대기
-    WaitForSingleObject(hEvent, INFINITE);
-    // 이벤트 설정
-    ResetEvent(hEvent);
+    // 타이머 설정
     if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
       printf("타이머 설정 실패\n");
       CloseHandle(hTimer);
       SetEvent(hEvent);
       return 1;
     }
-    // 매치 데이터 업데이트
-    
-    // 플레이어 좌표 이동
-    //updatePlayer(matchNum);
-        
+
+    // 타이머 대기 시작
+    // printf("타이머 대기 시작\n");
+    DWORD waitResult = WaitForSingleObject(hTimer, INFINITE);
+    if (waitResult != WAIT_OBJECT_0) {
+      printf("타이머 대기 실패 또는 중단: %d\n", GetLastError());
+      break;
+    }
+    // printf("타이머 대기 완료\n");
+
+    //// 이벤트 대기
+    //WaitForSingleObject(hEvent, INFINITE);
+    //ResetEvent(hEvent);
+
     // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는 지 비교한다, 다르다면 감소
     while (!(matchNum < 0) && matchNum < g_matches.size() &&
@@ -227,8 +230,9 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       matchNum--;
     }
 
+    EnterCriticalSection(&cs);
     // 플레이어 dx dy 변화
-    updatePlayerD(matchNum);
+    //updatePlayerD(matchNum);
     // printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
     // 플레이어 이동
     // movePlayer(matchNum);
@@ -239,31 +243,36 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 포탈 충돌처리
     // 오브젝트 충돌처리
     // sendParam업데이트
-    updateSendParam(matchNum);
-    // printf("%d, %d\r", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
+    //updateSendParam(matchNum);
+    printf("%d, %d\n", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
+    LeaveCriticalSection(&cs);
     // send 부분
-    char sendBuf[BUFSIZE];
-    int sendSize = sizeof(sendParam::sendParam);
+    char sendBuf[1 + BUFSIZE];
+    int sendSize = 1 + sizeof(sendParam::sendParam);
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
-        //printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
+        // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
         continue;
       }
-      //printf("클라이언트 %d 소켓 확인: %d\n", i, g_matches[matchNum].client_sock[i]);
+      // printf("클라이언트 %d 소켓 확인: %d\n", i, g_matches[matchNum].client_sock[i]);
       if (i == 0) {
-        memcpy(sendBuf, &g_matches[matchNum].SPlayer1,
-               sizeof(sendParam::sendParam));
+        sendBuf[0] = static_cast<std::int8_t>(
+            sendParam::PKT_CAT::PLAYER_INFO);  // 패킷 타입 설정
+        memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer1,
+               sizeof(sendParam::sendParam));  // 데이터 복사
       } else if (i == 1) {
-        memcpy(sendBuf, &g_matches[matchNum].SPlayer2,
-               sizeof(sendParam::sendParam));
+        sendBuf[0] = static_cast<std::int8_t>(
+            sendParam::PKT_CAT::PLAYER_INFO);  // 패킷 타입 설정
+        memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer2,
+               sizeof(sendParam::sendParam));  // 데이터 복사
       }
       int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
       if (retval == SOCKET_ERROR) {
-        //printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
-               //WSAGetLastError());
+        printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
+               WSAGetLastError());
       } else {
-        //printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\r", i, retval);
+        // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
       }
     }
     // 이벤트 해제
