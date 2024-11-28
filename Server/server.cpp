@@ -13,15 +13,15 @@ HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
 typedef struct Player {
   int x, y;
-  int dx, dy;
-  int jumpSpeed;
-  bool isCharging;
-  bool isJumping;
-  bool isSliding;
-  bool slip;  // 미끄러지는 동안 계속 true
-  bool damaged;
-  std::string face;  // face: left, right
-  bool EnhancedJumpPower;
+  int dx = 0, dy = 1;
+  int jumpSpeed = 0;
+  bool isCharging = false;
+  bool isJumping = false;
+  bool isSliding = false;
+  bool slip = false;  // 미끄러지는 동안 계속 true
+  bool damaged = false;
+  std::string face = "left";  // face: left, right
+  bool EnhancedJumpPower = false;
   bool spaceKeyReleased = true;
 };
 
@@ -71,20 +71,21 @@ typedef struct MATCH {
 std::vector<MATCH> g_matches;
 
 // 충돌처리 함수
+void initPlayer(int matchNum);
 void updatePlayerD(int matchNum);
-// applyGravity();
+void applyGravity(int matchNum);
 void movePlayer(int matchNum); // 플레이어 이동
 // moveBullets();
 // shootInterval++
-// 아이템 재생성 코드
-// 총알 재생성 코드
-// 포탈 충돌처리
+// for (auto& item : g_items){interval, disable}
+// ShootBullet
+// IsNextColliding
 // 오브젝트 충돌처리
-void updateSendParam(int matchNum);
 void CheckCollisions(int matchNum);
 void CheckEnemyPlayerCollisions(int matchNum);
 void CheckItemPlayerCollisions(int matchNum);
 void CheckPlayerBulletCollisions(int matchNum);
+void updateSendParam(int matchNum);
 
 // 매치를 삭제하는 함수
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
@@ -232,8 +233,9 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
     EnterCriticalSection(&cs);
     // 플레이어 dx dy 변화
-    //updatePlayerD(matchNum);
-    // printf("%d, %d\r", g_matches[matchNum].player1.dx, g_matches[matchNum].player2.dx);
+    updatePlayerD(matchNum);
+    printf("%d, %d\n", g_matches[matchNum].player1.dx, g_matches[matchNum].player1.dy);
+    applyGravity(matchNum);
     // 플레이어 이동
     // movePlayer(matchNum);
     // moveBullets();
@@ -243,7 +245,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 포탈 충돌처리
     // 오브젝트 충돌처리
     // sendParam업데이트
-    //updateSendParam(matchNum);
+    updateSendParam(matchNum);
     printf("%d, %d\n", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
     LeaveCriticalSection(&cs);
     // send 부분
@@ -349,6 +351,7 @@ int main(int argc, char* argv[]) {
       // g_matches의 클라이언트 소켓, 매치 넘버 업데이트
       g_matches.back().client_sock[0] = rParam->client_sock;
       g_matches.back().matchNum = g_matches.size() - 1;
+      initPlayer(*matchNumParam);
       // 수신 스레드 생성
       g_matches.back().recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
@@ -372,6 +375,7 @@ int main(int argc, char* argv[]) {
              rParam->playerNum);
       g_matches.back().recvThread[1] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
+      initPlayer(*matchNumParam);
     }
     // 이벤트 해제
     SetEvent(hEvent);
@@ -383,6 +387,14 @@ int main(int argc, char* argv[]) {
   // 윈속 종료
   WSACleanup();
   return 0;
+}
+
+void initPlayer(int matchNum) {
+  g_matches[matchNum].player1.x = (MAP_WIDTH - 6) * GRID;
+  g_matches[matchNum].player1.y = (MAP_HEIGHT - 4) * GRID;
+
+  g_matches[matchNum].player2.x = (MAP_WIDTH - 8) * GRID;
+  g_matches[matchNum].player2.y = (MAP_HEIGHT - 4) * GRID;
 }
 
 void updatePlayerD(int matchNum) {
@@ -403,7 +415,6 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.dx += 1;
     }
   }
-  g_matches[matchNum].player1.x += g_matches[matchNum].player1.dx;
   g_matches[matchNum].p1 = 'a';
   // player2 처리
   if (g_matches[matchNum].p2 == 0) {
@@ -422,10 +433,18 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player2.dx += 1;
     }
   }
-  g_matches[matchNum].player2.x += g_matches[matchNum].player2.dx;
+  g_matches[matchNum].p2 = 'a';
 }
 
-// void applyGravity() {}
+void applyGravity(int matchNum) {
+  if (g_matches[matchNum].player1.dy < 20) {
+    g_matches[matchNum].player1.dy += GRAVITY;  // 중력 적용
+  }
+  if (g_matches[matchNum].player2.dy < 20) {
+    g_matches[matchNum].player2.dy += GRAVITY;  // 중력 적용
+  }
+}
+
 /* void movePlayer(int matchNum) {
   int newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
   int newY = g_player.y + g_player.dy;
