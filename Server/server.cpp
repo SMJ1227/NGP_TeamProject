@@ -71,7 +71,7 @@ typedef struct MATCH {
 };
 std::vector<MATCH> g_matches;
 
-// 충돌처리 함수
+// 초기화 함수
 void InitMap(int matchNum, int src[MAP_HEIGHT][MAP_WIDTH]);
 void initPlayer(int matchNum);
 void initItem(int matchNum);
@@ -83,19 +83,15 @@ void DeleteAllEnemies(int matchNum);
 void ShootBullet(int matchNum);
 void DeleteAllBullets(int matchNum);
 void initAll(int matchNum);
-
+// 이동 함수
 void updatePlayerD(int matchNum);
 void applyGravity(int matchNum);
 bool IsColliding(int matchNum, int x, int y);
 bool IsSlopeGoRightColliding(int matchNum, int x, int y);
 bool IsSlopeGoLeftColliding(int matchNum, int x, int y);
 bool IsNextColliding(int matchNum, int x, int y);
-void movePlayer(int matchNum); // 플레이어 이동
-// moveBullets();
-// shootInterval++
-// for (auto& item : g_items){interval, disable}
-// ShootBullet
-// IsNextColliding
+void movePlayer(int matchNum);
+void moveBullets(int matchNum);
 // 오브젝트 충돌처리
 void CheckCollisions(int matchNum);
 void CheckEnemyPlayerCollisions(int matchNum);
@@ -680,12 +676,64 @@ void CheckCollisions(int matchNum) {
   CheckEnemyPlayerCollisions(matchNum);
   CheckItemPlayerCollisions(matchNum);
   CheckPlayerBulletCollisions(matchNum);
-  //CheckPlayersCollisions(matchNum);
+  CheckPlayersCollisions(matchNum);
 }
 
-void CheckEnemyPlayerCollisions(int matchNum) {}
-void CheckItemPlayerCollisions(int matchNum) {}
-void CheckPlayerBulletCollisions(int matchNum) {}
+void CheckEnemyPlayerCollisions(int matchNum) {
+  for (auto it = g_matches[matchNum].g_enemies.begin();
+       it != g_matches[matchNum].g_enemies.end();) {
+    if (g_matches[matchNum].player1.x >= it->x * GRID &&
+        g_matches[matchNum].player1.x <= (it->x + 1) * GRID &&
+        g_matches[matchNum].player1.y >= it->y * GRID &&
+        g_matches[matchNum].player1.y <= (it->y + 1) * GRID) {
+      g_matches[matchNum].player1.dx = 4;
+      g_matches[matchNum].player1.isCharging = false;
+      g_matches[matchNum].player1.jumpSpeed = 0;
+      ++it;  // 충돌 시 반복자를 증가시킵니다.
+    } else {
+      ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
+    }
+  }
+}
+
+void CheckItemPlayerCollisions(int matchNum) {
+  for (auto it = g_matches[matchNum].g_items.begin();
+       it != g_matches[matchNum].g_items.end();) {
+    if (g_matches[matchNum].player1.x >= it->x * GRID &&
+        g_matches[matchNum].player1.x <= (it->x + 1) * GRID &&
+        g_matches[matchNum].player1.y >= it->y * GRID &&
+        g_matches[matchNum].player1.y <= (it->y + 1) * GRID) 
+    {
+        g_matches[matchNum].player1.EnhancedJumpPower = true;
+        g_matches[matchNum].player1.isJumping = false;
+        it->disable = true;
+        it->interval = 60; 
+    }
+    ++it;
+  }
+}
+
+void CheckPlayerBulletCollisions(int matchNum) {
+  for (auto it = g_matches[matchNum].g_bullets.begin();
+       it != g_matches[matchNum].g_bullets.end();) {
+    if (it->x >= g_matches[matchNum].player1.x - PLAYER_SIZE &&
+        it->x <= g_matches[matchNum].player1.x + PLAYER_SIZE &&
+        it->y >= g_matches[matchNum].player1.y - PLAYER_SIZE &&
+        it->y <= g_matches[matchNum].player1.y + PLAYER_SIZE) 
+    {
+      // 플레이어를 뒤로 밀침
+      g_matches[matchNum].player1.dx = it->dx * 2;
+      g_matches[matchNum].player1.isCharging = false;
+      g_matches[matchNum].player1.jumpSpeed = 0;
+      g_matches[matchNum].player1.damaged = true;
+      // 플레이어와 충돌 시 제거
+      it = g_matches[matchNum].g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 void CheckPlayersCollisions(int matchNum) {}
 
 void updateSendParam(int matchNum) {
