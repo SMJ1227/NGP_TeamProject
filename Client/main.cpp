@@ -400,7 +400,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
 #ifndef NDEBUG
           std::println(wow, "MapInfo recv  {} = {}", return_value,
-                       map_num_info);
+                       *map_num_info);
           wow.emit();
 #endif  // !NDEBUG
 
