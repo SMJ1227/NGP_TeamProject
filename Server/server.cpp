@@ -13,7 +13,7 @@ HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
 typedef struct Player {
   int x, y;
-  int dx = 0, dy = 1;
+  int dx = 0, dy = 0;
   int jumpSpeed = 0;
   bool isCharging = false;
   bool isJumping = false;
@@ -175,7 +175,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     buf[retval] = '\0';
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
-      //printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
+      // printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
@@ -208,7 +208,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
   // 타이머 간격을 설정 (1/30초)
   LARGE_INTEGER liDueTime;  // LARGE_INTEGER는 SetWaitableTimer에서 요구함
-  liDueTime.QuadPart = -999900;
+  liDueTime.QuadPart = -333300;
 
   while (true) {
     // 타이머 설정
@@ -247,7 +247,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     EnterCriticalSection(&cs);
     // 플레이어 dx dy 변화
     updatePlayerD(matchNum);
-    printf("%d, %d\n", g_matches[matchNum].player1.dx, g_matches[matchNum].player1.dy);
+    //printf("%d, %d\n", g_matches[matchNum].player1.dx, g_matches[matchNum].player1.dy);
     applyGravity(matchNum);
     movePlayer(matchNum);
     // moveBullets();
@@ -257,8 +257,8 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 포탈 충돌처리
     // 오브젝트 충돌처리
     // sendParam업데이트
+    // printf("match %d: %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer1.y);
     updateSendParam(matchNum);
-    // printf("%d, %d\n", g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer2.x);
     LeaveCriticalSection(&cs);
     // send 부분
     char sendBuf[1 + BUFSIZE];
@@ -363,7 +363,7 @@ int main(int argc, char* argv[]) {
       // g_matches의 클라이언트 소켓, 매치 넘버 업데이트
       g_matches.back().client_sock[0] = rParam->client_sock;
       g_matches.back().matchNum = g_matches.size() - 1;
-      initPlayer(*matchNumParam);
+      initAll(*matchNumParam);
       // 수신 스레드 생성
       g_matches.back().recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
@@ -410,7 +410,7 @@ void InitMap(int matchNum, int src[MAP_HEIGHT][MAP_WIDTH]) {
 }
 
 void initPlayer(int matchNum) {
-  g_matches[matchNum].player1.x = (MAP_WIDTH - 6) * GRID;
+  g_matches[matchNum].player1.x = (MAP_WIDTH - 7) * GRID;
   g_matches[matchNum].player1.y = (MAP_HEIGHT - 4) * GRID;
 
   g_matches[matchNum].player2.x = (MAP_WIDTH - 8) * GRID;
@@ -484,7 +484,7 @@ void initAll(int matchNum) {
   initEnemy(matchNum);
 }
 
-void updatePlayerD(int matchNum) {
+void updatePlayerD(int matchNum) {  // a로 바꿔버리기때문에 한번만 dx연산이 이루어진다. 
   // player1 처리
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
@@ -600,7 +600,9 @@ bool IsNextColliding(int matchNum, int x, int y) {
 void movePlayer(int matchNum) {
   int newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
   int newY = g_matches[matchNum].player1.y + g_matches[matchNum].player1.dy;
-
+  printf("%d %d, %d %d\n", g_matches[matchNum].player1.x,
+         g_matches[matchNum].player1.dx, g_matches[matchNum].player1.y,
+         g_matches[matchNum].player1.dy);
   bool isVerticalCollision =
       IsColliding(matchNum, g_matches[matchNum].player1.x, newY);
   bool isHorizontalCollision =
@@ -619,7 +621,7 @@ void movePlayer(int matchNum) {
   } else {
     // 바닥 충돌 시 y축 위치 보정
     if (g_matches[matchNum].player1.dy > 0) {
-      while (!IsColliding(matchNum, g_matches[matchNum].player1.x,
+      if (!IsColliding(matchNum, g_matches[matchNum].player1.x,
                           g_matches[matchNum].player1.y + 1)) {
         g_matches[matchNum].player1.y += 1;
       }
@@ -628,14 +630,14 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = false;
   }
-
+  
   // 수평 충돌 처리
   if (!isHorizontalCollision) {
     g_matches[matchNum].player1.x = newX;
   } else {
     g_matches[matchNum].player1.dx = 0;  // 충돌 후 x축 속도 초기화
   }
-
+  
   if (isSlopeGoRightCollision) {
     g_matches[matchNum].player1.isSliding = true;
 
@@ -657,6 +659,7 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.x = newX;
     g_matches[matchNum].player1.y = newY;
   }
+
 }
 
 void moveBullets(int matchNum) {
