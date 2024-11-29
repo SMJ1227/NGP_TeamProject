@@ -2,11 +2,13 @@
 #define BUFSIZE 512
 
 #include "common.h"
-#include "map.h"
-#include "sendParam.hpp"
 #include <windows.h>  // windows 관련 함수 포함
+
 #include <iostream>
 #include <vector>
+
+#include "map.h"
+#include "sendParam.hpp"
 
 CRITICAL_SECTION cs;
 HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -139,18 +141,19 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
-  
+  printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr,
+         ntohs(clientaddr.sin_port));
+
   while (1) {
     // 다른 스레드 작동중 대기
     WaitForSingleObject(hEvent, INFINITE);
     ResetEvent(hEvent);
     // 벡터의 유효한 범위 내에서, 현재 매치의 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는지 비교한다, 다르다면 감소
-    
+
     while (matchNum >= 0 && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
-        // 디버그옹 출력
+      // 디버그옹 출력
       printf(
           "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
           "않음, matchNum감소\n",
@@ -158,8 +161,8 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       matchNum--;
     }
     // 디버그용 출력
-    // printf("\nrecvThread 루프 시작, matchNum: %d, playerNum: %d\n", matchNum, playerNum); 
-    // 데이터 받기
+    // printf("\nrecvThread 루프 시작, matchNum: %d, playerNum: %d\n", matchNum,
+    // playerNum); 데이터 받기
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
@@ -170,29 +173,32 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       SetEvent(hEvent);
       break;
     }
-      
+
     // 받은 데이터 출력
     buf[retval] = '\0';
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
-      // printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
+      // printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum,
+      // buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
-      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port), g_matches[matchNum].p2);
+      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
+             g_matches[matchNum].p2);
     }
 
     if (retval == SOCKET_ERROR) {
       err_display("send()");
       SetEvent(hEvent);
       break;
-    } 
+    }
     // 이벤트 해제
     SetEvent(hEvent);
   }
   // 소켓 닫기
   closesocket(client_sock);
-  printf("[TCP 서버] 클라이언트 종료: IP 주소=%s, 포트 번호=%d\n", addr, ntohs(clientaddr.sin_port));
+  printf("[TCP 서버] 클라이언트 종료: IP 주소=%s, 포트 번호=%d\n", addr,
+         ntohs(clientaddr.sin_port));
   return 0;
 }
 
@@ -229,8 +235,8 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // printf("타이머 대기 완료\n");
 
     //// 이벤트 대기
-    //WaitForSingleObject(hEvent, INFINITE);
-    //ResetEvent(hEvent);
+    // WaitForSingleObject(hEvent, INFINITE);
+    // ResetEvent(hEvent);
 
     // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는 지 비교한다, 다르다면 감소
@@ -247,7 +253,8 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     EnterCriticalSection(&cs);
     // 플레이어 dx dy 변화
     updatePlayerD(matchNum);
-    //printf("%d, %d\n", g_matches[matchNum].player1.dx, g_matches[matchNum].player1.dy);
+    // printf("%d, %d\n", g_matches[matchNum].player1.dx,
+    // g_matches[matchNum].player1.dy);
     applyGravity(matchNum);
     movePlayer(matchNum);
     // moveBullets();
@@ -257,7 +264,8 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 포탈 충돌처리
     // 오브젝트 충돌처리
     // sendParam업데이트
-    // printf("match %d: %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer1.y);
+    // printf("match %d: %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
+    // g_matches[matchNum].SPlayer1.y);
     updateSendParam(matchNum);
     LeaveCriticalSection(&cs);
     // send 부분
@@ -269,7 +277,8 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
         continue;
       }
-      // printf("클라이언트 %d 소켓 확인: %d\n", i, g_matches[matchNum].client_sock[i]);
+      // printf("클라이언트 %d 소켓 확인: %d\n", i,
+      // g_matches[matchNum].client_sock[i]);
       if (i == 0) {
         sendBuf[0] = static_cast<std::int8_t>(
             sendParam::PKT_CAT::PLAYER_INFO);  // 패킷 타입 설정
@@ -281,19 +290,21 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer2,
                sizeof(sendParam::sendParam));  // 데이터 복사
       }
-      int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+      int retval =
+          send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
       if (retval == SOCKET_ERROR) {
         printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
                WSAGetLastError());
       } else {
-        // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
+        // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i,
+        // retval);
       }
     }
     // 이벤트 해제
     SetEvent(hEvent);
     // 필요에 따라 타이머 중단 조건을 추가.
   }
-  
+
   CloseHandle(hTimer);
   return 0;
 }
@@ -308,6 +319,10 @@ int main(int argc, char* argv[]) {
   // 소켓 생성
   SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_sock == INVALID_SOCKET) err_quit("socket()");
+
+  DWORD opt_val = 1;
+  setsockopt(listen_sock, IPPROTO_TCP, TCP_NODELAY, (char const*)&opt_val,
+             sizeof(opt_val));
 
   // bind()
   struct sockaddr_in serveraddr;
@@ -326,7 +341,7 @@ int main(int argc, char* argv[]) {
   struct sockaddr_in clientaddr;
   int addrlen;
   HANDLE hThread;
-  recvParam *rParam;
+  recvParam* rParam;
   int* matchNumParam;
   InitializeCriticalSection(&cs);
 
@@ -375,7 +390,7 @@ int main(int argc, char* argv[]) {
           CreateThread(NULL, 0, timerProcessClient, matchNumParam, 0, NULL);
     }
     // 플레이어2 스레드 생성
-    
+
     else if (g_matches.back().client_sock[0] != NULL &&
              g_matches.back().client_sock[1] == NULL) {
       printf("2번 반복문 진입\n");
@@ -437,9 +452,7 @@ void GenerateItem(int matchNum, int x, int y) {
   g_matches[matchNum].g_items.push_back(newItem);
 }
 
-void DeleteAllItems(int matchNum) {
-    g_matches[matchNum].g_items.clear(); 
-}
+void DeleteAllItems(int matchNum) { g_matches[matchNum].g_items.clear(); }
 
 void initEnemy(int matchNum) {
   for (int y = 0; y < MAP_HEIGHT; y++) {
@@ -458,9 +471,7 @@ void GenerateEnemy(int matchNum, int x, int y) {
   g_matches[matchNum].g_enemies.push_back(newEnemy);
 }
 
-void DeleteAllEnemies(int matchNum) { 
-    g_matches[matchNum].g_enemies.clear();
-}
+void DeleteAllEnemies(int matchNum) { g_matches[matchNum].g_enemies.clear(); }
 
 void ShootBullet(int matchNum) {
   for (const auto& enemy : g_matches[matchNum].g_enemies) {
@@ -473,18 +484,17 @@ void ShootBullet(int matchNum) {
   }
 }
 
-void DeleteAllBullets(int matchNum) { 
-    g_matches[matchNum].g_bullets.clear();
-}
+void DeleteAllBullets(int matchNum) { g_matches[matchNum].g_bullets.clear(); }
 
-void initAll(int matchNum) { 
+void initAll(int matchNum) {
   InitMap(matchNum, map1);
   initPlayer(matchNum);
   initItem(matchNum);
   initEnemy(matchNum);
 }
 
-void updatePlayerD(int matchNum) {  // a로 바꿔버리기때문에 한번만 dx연산이 이루어진다. 
+void updatePlayerD(
+    int matchNum) {  // a로 바꿔버리기때문에 한번만 dx연산이 이루어진다.
   // player1 처리
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
@@ -622,7 +632,7 @@ void movePlayer(int matchNum) {
     // 바닥 충돌 시 y축 위치 보정
     if (g_matches[matchNum].player1.dy > 0) {
       if (!IsColliding(matchNum, g_matches[matchNum].player1.x,
-                          g_matches[matchNum].player1.y + 1)) {
+                       g_matches[matchNum].player1.y + 1)) {
         g_matches[matchNum].player1.y += 1;
       }
     }
@@ -630,14 +640,14 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = false;
   }
-  
+
   // 수평 충돌 처리
   if (!isHorizontalCollision) {
     g_matches[matchNum].player1.x = newX;
   } else {
     g_matches[matchNum].player1.dx = 0;  // 충돌 후 x축 속도 초기화
   }
-  
+
   if (isSlopeGoRightCollision) {
     g_matches[matchNum].player1.isSliding = true;
 
@@ -659,7 +669,6 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.x = newX;
     g_matches[matchNum].player1.y = newY;
   }
-
 }
 
 void moveBullets(int matchNum) {
@@ -705,12 +714,11 @@ void CheckItemPlayerCollisions(int matchNum) {
     if (g_matches[matchNum].player1.x >= it->x * GRID &&
         g_matches[matchNum].player1.x <= (it->x + 1) * GRID &&
         g_matches[matchNum].player1.y >= it->y * GRID &&
-        g_matches[matchNum].player1.y <= (it->y + 1) * GRID) 
-    {
-        g_matches[matchNum].player1.EnhancedJumpPower = true;
-        g_matches[matchNum].player1.isJumping = false;
-        it->disable = true;
-        it->interval = 60; 
+        g_matches[matchNum].player1.y <= (it->y + 1) * GRID) {
+      g_matches[matchNum].player1.EnhancedJumpPower = true;
+      g_matches[matchNum].player1.isJumping = false;
+      it->disable = true;
+      it->interval = 60;
     }
     ++it;
   }
@@ -722,8 +730,7 @@ void CheckPlayerBulletCollisions(int matchNum) {
     if (it->x >= g_matches[matchNum].player1.x - PLAYER_SIZE &&
         it->x <= g_matches[matchNum].player1.x + PLAYER_SIZE &&
         it->y >= g_matches[matchNum].player1.y - PLAYER_SIZE &&
-        it->y <= g_matches[matchNum].player1.y + PLAYER_SIZE) 
-    {
+        it->y <= g_matches[matchNum].player1.y + PLAYER_SIZE) {
       // 플레이어를 뒤로 밀침
       g_matches[matchNum].player1.dx = it->dx * 2;
       g_matches[matchNum].player1.isCharging = false;

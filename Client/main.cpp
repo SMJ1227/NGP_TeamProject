@@ -553,6 +553,9 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
           err_quit("socket() 호출");
         }
 
+        DWORD opt_val = 1;
+        setsockopt(server_sock, IPPROTO_TCP, TCP_NODELAY, (char const*)&opt_val,
+                   sizeof(opt_val));
         sockaddr_in serveraddr{.sin_family = AF_INET,
                                .sin_port = htons(game_protocol::g_server_port)};
         return_value =
