@@ -177,12 +177,21 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
 
     // 받은 데이터 출력
     buf[retval] = '\0';
+    char input = buf[0];
     if (playerNum == 0) {
-      g_matches[matchNum].p1 = buf[0];
-
-      std::println("{}매치 {}플레이어에게 받은 데이터: {:?}", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
+      if (!g_matches[matchNum].player1.isCharging) {
+        g_matches[matchNum].p1 = input;
+      } 
+      else {
+        if (input == ' ') {
+          g_matches[matchNum].p1 = input;
+        } else if (input == '\b') {
+          g_matches[matchNum].p1 = input;
+        }
+      }
+       std::println("{}매치 {}플레이어에게 받은 데이터: {:?}", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
-    if (playerNum == 1) {
+    else if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
       printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
              g_matches[matchNum].p2);
@@ -215,7 +224,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
   // 타이머 간격을 설정 (1/30초)
   LARGE_INTEGER liDueTime;  // LARGE_INTEGER는 SetWaitableTimer에서 요구함
-  liDueTime.QuadPart = -333300;
+  liDueTime.QuadPart = -160000;
 
   while (true) {
     // 타이머 설정
@@ -253,6 +262,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
     EnterCriticalSection(&cs);
     // 플레이어 dx dy 변화
+     printf("match %d: %c\r", matchNum, g_matches[matchNum].p1);
     updatePlayerD(matchNum);
     // printf("%d, %d\n", g_matches[matchNum].player1.dx,
     // g_matches[matchNum].player1.dy);
@@ -265,8 +275,6 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 포탈 충돌처리
     // 오브젝트 충돌처리
     // sendParam업데이트
-    // printf("match %d: %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
-    // g_matches[matchNum].SPlayer1.y);
     updateSendParam(matchNum);
     //printf("match %d: %d, %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
     //       g_matches[matchNum].SPlayer1.y, g_matches[matchNum].SPlayer1.face);
@@ -490,7 +498,7 @@ void ShootBullet(int matchNum) {
 void DeleteAllBullets(int matchNum) { g_matches[matchNum].g_bullets.clear(); }
 
 void initAll(int matchNum) {
-  InitMap(matchNum, map1);
+  InitMap(matchNum, map0);
   initPlayer(matchNum);
   initItem(matchNum);
   initEnemy(matchNum);
@@ -511,31 +519,24 @@ void updatePlayerD(
       g_matches[matchNum].player1.face = true;
     }
   } 
-  else if (g_matches[matchNum].p1 == 'a') {
-    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
-    if (g_matches[matchNum].player1.dx > 0) {
-      g_matches[matchNum].player1.dx -= 1;
-    } else if (g_matches[matchNum].player1.dx < 0) {
-      g_matches[matchNum].player1.dx += 1;
-    }
-  } 
-  else if (g_matches[matchNum].p1 != ' ') {  // 점프 차징
+  else if (g_matches[matchNum].p1 == ' ') {  // 점프 차징
     g_matches[matchNum].player1.spaceKeyReleased = false;
-    if (g_matches[matchNum].player1.isJumping &&
+    if (!g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
       if (g_matches[matchNum].player1.damaged) {
         g_matches[matchNum].player1.damaged = false;
       }
       g_matches[matchNum].player1.isCharging = true;
       g_matches[matchNum].player1.dx = 0;
-      g_matches[matchNum].player1.jumpSpeed -= 1;
+      g_matches[matchNum].player1.jumpSpeed -= 2;
+      printf("%d\r", g_matches[matchNum].player1.jumpSpeed);
       if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
         g_matches[matchNum].player1.jumpSpeed = -20;
       }
     }
   } 
-  else if (g_matches[matchNum].p1 != '\b') {  // 점프 뛰기
-    if (g_matches[matchNum].player1.spaceKeyReleased &&
+  else if (g_matches[matchNum].p1 == '\b') {  // 점프 뛰기
+    if (!g_matches[matchNum].player1.spaceKeyReleased &&
         g_matches[matchNum].player1.isCharging) {
       g_matches[matchNum].player1.dy = g_matches[matchNum].player1.jumpSpeed;
       g_matches[matchNum].player1.jumpSpeed = 0;
@@ -546,27 +547,20 @@ void updatePlayerD(
       }
       g_matches[matchNum].player1.spaceKeyReleased = true;
     }
+  } 
+  else if (g_matches[matchNum].p1 == 'a') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player1.dx > 0) {
+      g_matches[matchNum].player1.dx -= 1;
+    } else if (g_matches[matchNum].player1.dx < 0) {
+      g_matches[matchNum].player1.dx += 1;
+    }
+  } 
+  if (g_matches[matchNum].p1 != ' ') {
+    g_matches[matchNum].p1 = 'a';
   }
-  g_matches[matchNum].p1 = 'a';
 
   // player2 처리
-  if (g_matches[matchNum].p2 == 0) {
-    if (g_matches[matchNum].player2.dx >= -3) {
-      g_matches[matchNum].player2.dx -= 1;
-    }
-  } else if (g_matches[matchNum].p2 == 1) {
-    if (g_matches[matchNum].player2.dx <= 3) {
-      g_matches[matchNum].player2.dx += 1;
-    }
-  } else if (g_matches[matchNum].p2 != 0 && g_matches[matchNum].p2 != 1) {
-    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
-    if (g_matches[matchNum].player2.dx > 0) {
-      g_matches[matchNum].player2.dx -= 1;
-    } else if (g_matches[matchNum].player2.dx < 0) {
-      g_matches[matchNum].player2.dx += 1;
-    }
-  }
-  g_matches[matchNum].p2 = 'a';
 }
 
 void applyGravity(int matchNum) {
