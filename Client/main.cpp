@@ -607,7 +607,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
   HDC mDC;
   HBITMAP hBitmap;
   RECT rt;
-  LPARAM static network_checked{};
+  LPARAM static network_checked_deallocated{};
   static int playerFrameIndex = 0;
 
   switch (message) {
@@ -717,14 +717,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
     case WM_NETWORK_INFORM: {
       using HeaderType = sendParam::PKT_CAT;
       std::int8_t curr_cat = LOBYTE(wParam);
+
+      
+      if (lParam == network_checked_deallocated) {
+        break;
+      } else {
+        network_checked_deallocated = lParam;
+      }
+
       // recv에서 보낸 정보 처리
       switch (static_cast<HeaderType>(curr_cat)) {
         case HeaderType::PLAYER_INFO: {
-          if (lParam == network_checked) {
-            break;
-          } else {
-            network_checked = lParam;
-          }
           PlayerInfoMSG* player_infoes =
               reinterpret_cast<PlayerInfoMSG*>(lParam);
 
