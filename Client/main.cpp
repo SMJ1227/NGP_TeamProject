@@ -607,7 +607,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
   HDC mDC;
   HBITMAP hBitmap;
   RECT rt;
-
+  LPARAM static network_checked{};
   static int playerFrameIndex = 0;
 
   switch (message) {
@@ -720,25 +720,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       // recv에서 보낸 정보 처리
       switch (static_cast<HeaderType>(curr_cat)) {
         case HeaderType::PLAYER_INFO: {
-          {
-            PlayerInfoMSG* player_infoes =
-                reinterpret_cast<PlayerInfoMSG*>(lParam);
-
-            g_player.x = player_infoes->my_player.x;
-            g_player.y = player_infoes->my_player.y;
-
-            otherPlayer.x = player_infoes->other_player.x;
-            otherPlayer.y = player_infoes->other_player.y;
+          if (lParam == network_checked) {
+            break;
+          } else {
+            network_checked = lParam;
           }
+          PlayerInfoMSG* player_infoes =
+              reinterpret_cast<PlayerInfoMSG*>(lParam);
 
-          // #ifndef NDEBUG
-          //           std::println(
-          //               wow, "player window get my x,y : ({}, {}), other x,y
-          //               : ({}, {})", g_player.x, g_player.y, otherPlayer.x,
-          //               otherPlayer.y);
-          //           wow.emit();
-          //           wow.flush();
-          // #endif  // !NDEBUG
+          g_player.x = player_infoes->my_player.x;
+          g_player.y = player_infoes->my_player.y;
+
+          otherPlayer.x = player_infoes->other_player.x;
+          otherPlayer.y = player_infoes->other_player.y;
+
+#ifndef NDEBUG
+          std::println(
+              wow,
+              "player window get my x,y : ({}, {}), other x, y : ({}, {}) ",
+              g_player.x, g_player.y, otherPlayer.x, otherPlayer.y);
+          wow.emit();
+          wow.flush();
+#endif  // !NDEBUG
+          delete player_infoes;
 
           break;
         }
