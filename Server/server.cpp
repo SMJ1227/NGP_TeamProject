@@ -7,6 +7,7 @@
 #include <windows.h>  // windows 관련 함수 포함
 #include <iostream>
 #include <vector>
+#include <print>
 
 CRITICAL_SECTION cs;
 HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -20,7 +21,7 @@ typedef struct Player {
   bool isSliding = false;
   bool slip = false;  // 미끄러지는 동안 계속 true
   bool damaged = false;
-  std::string face = "left";  // face: left, right
+  bool face = 0;  // face: left, right
   bool EnhancedJumpPower = false;
   bool spaceKeyReleased = true;
 };
@@ -175,7 +176,8 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     buf[retval] = '\0';
     if (playerNum == 0) {
       g_matches[matchNum].p1 = buf[0];
-      // printf("%d매치 %d플레이어에게 받은 데이터: %c\n", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
+
+      std::println("{}매치 {}플레이어에게 받은 데이터: {:?}", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
     if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
@@ -257,8 +259,9 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 포탈 충돌처리
     // 오브젝트 충돌처리
     // sendParam업데이트
-    // printf("match %d: %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x, g_matches[matchNum].SPlayer1.y);
     updateSendParam(matchNum);
+    //printf("match %d: %d, %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
+    //       g_matches[matchNum].SPlayer1.y, g_matches[matchNum].SPlayer1.face);
     LeaveCriticalSection(&cs);
     // send 부분
     char sendBuf[1 + BUFSIZE];
@@ -489,20 +492,53 @@ void updatePlayerD(int matchNum) {  // a로 바꿔버리기때문에 한번만 dx연산이 이루
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
       g_matches[matchNum].player1.dx -= 1;
+      g_matches[matchNum].player1.face = false;
     }
-  } else if (g_matches[matchNum].p1 == '1') {
+  } 
+  else if (g_matches[matchNum].p1 == '1') {
     if (g_matches[matchNum].player1.dx <= 3) {
       g_matches[matchNum].player1.dx += 1;
+      g_matches[matchNum].player1.face = true;
     }
-  } else if (g_matches[matchNum].p1 != '0' && g_matches[matchNum].p1 != '1') {
+  } 
+  else if (g_matches[matchNum].p1 == 'a') {
     // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;
     } else if (g_matches[matchNum].player1.dx < 0) {
       g_matches[matchNum].player1.dx += 1;
     }
+  } 
+  else if (g_matches[matchNum].p1 != ' ') {  // 점프 차징
+    g_matches[matchNum].player1.spaceKeyReleased = false;
+    if (g_matches[matchNum].player1.isJumping &&
+        g_matches[matchNum].player1.jumpSpeed > -20) {
+      if (g_matches[matchNum].player1.damaged) {
+        g_matches[matchNum].player1.damaged = false;
+      }
+      g_matches[matchNum].player1.isCharging = true;
+      g_matches[matchNum].player1.dx = 0;
+      g_matches[matchNum].player1.jumpSpeed -= 1;
+      if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
+        g_matches[matchNum].player1.jumpSpeed = -20;
+      }
+    }
+  } 
+  else if (g_matches[matchNum].p1 != '\b') {  // 점프 뛰기
+    if (g_matches[matchNum].player1.spaceKeyReleased &&
+        g_matches[matchNum].player1.isCharging) {
+      g_matches[matchNum].player1.dy = g_matches[matchNum].player1.jumpSpeed;
+      g_matches[matchNum].player1.jumpSpeed = 0;
+      g_matches[matchNum].player1.isCharging = false;
+      g_matches[matchNum].player1.isJumping = true;
+      if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
+        g_matches[matchNum].player1.EnhancedJumpPower = 0;
+      }
+      g_matches[matchNum].player1.spaceKeyReleased = true;
+    }
   }
   g_matches[matchNum].p1 = 'a';
+
   // player2 처리
   if (g_matches[matchNum].p2 == 0) {
     if (g_matches[matchNum].player2.dx >= -3) {
@@ -600,9 +636,7 @@ bool IsNextColliding(int matchNum, int x, int y) {
 void movePlayer(int matchNum) {
   int newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
   int newY = g_matches[matchNum].player1.y + g_matches[matchNum].player1.dy;
-  printf("%d %d, %d %d\n", g_matches[matchNum].player1.x,
-         g_matches[matchNum].player1.dx, g_matches[matchNum].player1.y,
-         g_matches[matchNum].player1.dy);
+
   bool isVerticalCollision =
       IsColliding(matchNum, g_matches[matchNum].player1.x, newY);
   bool isHorizontalCollision =
@@ -743,6 +777,7 @@ void updateSendParam(int matchNum) {
   // player 1
   g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
   g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
+  g_matches[matchNum].SPlayer1.face = g_matches[matchNum].player1.face;
   g_matches[matchNum].SPlayer1.acting = 0;  // 추후 충돌처리 이후 추가
   // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
