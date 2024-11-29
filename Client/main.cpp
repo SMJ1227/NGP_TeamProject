@@ -333,13 +333,13 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
     for (bool unfinished = true; unfinished;) {
       // 받은 데이터 처리
       using HeaderType = sendParam::PKT_CAT;
+      int constexpr kInfoHeaderSize = sizeof(HeaderType);
       HeaderType* header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
           using InfoType = sendParam::sendParam;
 
           int constexpr kInfoSize = sizeof(InfoType);
-          int constexpr kInfoHeaderSize = sizeof(HeaderType);
           int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
 
           // 데이터를 다 받았는지 확인
@@ -380,7 +380,6 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           using InfoType = std::int32_t;
 
           int constexpr kInfoSize = sizeof(InfoType);
-          int constexpr kInfoHeaderSize = sizeof(HeaderType);
           int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
           // 데이터 다 받았는지 확인
           if (kInfoPacketSize > recved_buffer_size) {
@@ -404,6 +403,32 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           wow.emit();
 #endif  // !NDEBUG
 
+          // 버퍼 처리
+          std::memcpy(recv_buff.data(),
+                      std::next(recv_buff.data(), kInfoPacketSize),
+                      recved_buffer_size - kInfoPacketSize);
+          recved_buffer_size -= kInfoPacketSize;
+          break;
+        }
+        case sendParam::PKT_CAT::ITEM_INFO: {
+          using InfoType = sendParam::sendItemActive;
+          int constexpr kInfoSize = sizeof(InfoType);
+          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+
+          if (kInfoPacketSize > recved_buffer_size) {
+            unfinished = false;
+            break;
+          }
+
+          InfoType* item_info =
+              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+
+          sendParam::sendItemActive* item_info_msg =
+              new sendParam::sendItemActive{*item_info};
+
+          ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                        static_cast<std::int8_t>(sendParam::PKT_CAT::ITEM_INFO),
+                        (LPARAM)item_info_msg);
           // 버퍼 처리
           std::memcpy(recv_buff.data(),
                       std::next(recv_buff.data(), kInfoPacketSize),
@@ -469,7 +494,8 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       was_pressed_space = true;
 
 #ifndef NDEBUG
-      std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+      std::println(wow,
+                   "send sp {} = {:?}:{} left {:0x} right {:0x} space {:0x}",
                    return_value, std::string_view{buffer}, buffer.size(),
                    left_check_value, right_check_value, space_check_value);
       wow.emit();
@@ -481,7 +507,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
 #ifndef NDEBUG
       std::println(wow,
-                   "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                   "send bsp {} = {:?}:{} left {:0x} right {:0x} space {:0x}",
                    return_value, std::string_view{buffer}, buffer.size(),
                    left_check_value, right_check_value, space_check_value);
       wow.emit();
@@ -494,6 +520,15 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       std::this_thread::yield();
       continue;
     }
+
+#ifndef NDEBUG
+    std::println(wow,
+                 "send input {} = {:?}:{} left {:0x} right {:0x} space {:0x}",
+                 return_value, std::string_view{buffer}, buffer.size(),
+                 left_check_value, right_check_value, space_check_value);
+    wow.emit();
+    wow.flush();
+#endif  // NDEBUG
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
@@ -742,9 +777,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
           g_player.x = player_infoes->my_player.x;
           g_player.y = player_infoes->my_player.y;
+          g_player.face = player_infoes->my_player.face;
+
 
           otherPlayer.x = player_infoes->other_player.x;
           otherPlayer.y = player_infoes->other_player.y;
+          otherPlayer.face = player_infoes->other_player.face;
 
 #ifndef NDEBUG
           std::println(
@@ -790,6 +828,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
             }
           }
 
+          break;
+        }
+        case sendParam::PKT_CAT::ITEM_INFO: {
+          sendParam::sendItemActive* item_info =
+              reinterpret_cast<sendParam::sendItemActive*>(lParam);
+
+          if (g_items.size() > item_info->index) {
+            g_items.at(item_info->index).disable = !item_info->is_active;
+          }
+
+          delete item_info;
           break;
         }
       }
