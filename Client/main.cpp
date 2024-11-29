@@ -15,6 +15,7 @@
 #include <syncstream>
 #include <vector>
 
+#include "../Server/sendParam.hpp"
 #include "network_util.hpp"
 #include "protocol.hpp"
 #include "resource.h"
@@ -295,7 +296,7 @@ struct RecvClientParam {
   HWND window_handle;
 };
 struct PlayerInfoMSG {
-  game_protocol::PlayerInfo my_player, other_player;
+  sendParam::sendParam my_player, other_player;
 };
 
 DWORD WINAPI RecvClient(LPVOID lp_param) {
@@ -308,7 +309,6 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   int constexpr BUFF_SIZE = 100;
   std::array<char, BUFF_SIZE> recv_buff{};
   int recved_buffer_size{};
-  using namespace game_protocol;
 
   while (true) {
     // 데이터 받기
@@ -332,29 +332,36 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
     for (bool unfinished = true; unfinished;) {
       // 받은 데이터 처리
-      switch (static_cast<PKT_CAT>(recv_buff[0])) {
-        case PKT_CAT::PLAYER_INFO: {
+      using HeaderType = sendParam::PKT_CAT;
+      HeaderType* header = reinterpret_cast<HeaderType*>(recv_buff.data());
+      switch (static_cast<HeaderType>(*header)) {
+        case sendParam::PKT_CAT::PLAYER_INFO: {
+          using InfoType = sendParam::sendParam;
+
+          int constexpr kInfoSize = sizeof(InfoType);
+          int constexpr kInfoHeaderSize = sizeof(HeaderType);
+          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+
           // 데이터를 다 받았는지 확인
-          if (sizeof(PlayerInfoPacket) * 2 > recved_buffer_size) {
+          if (kInfoPacketSize * 2 > recved_buffer_size) {
             unfinished = false;
             break;
           }
 
           // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          PlayerInfoPacket* my_player_info_packet =
-              reinterpret_cast<PlayerInfoPacket*>(recv_buff.data());
+          InfoType* my_player_info_packet =
+              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
 
-          PlayerInfoPacket* other_player_info_packet =
-              reinterpret_cast<PlayerInfoPacket*>(
-                  std::next(recv_buff.data(), sizeof(PlayerInfoPacket)));
+          InfoType* other_player_info_packet = reinterpret_cast<InfoType*>(
+              std::next(recv_buff.data(), kInfoPacketSize + kInfoHeaderSize));
 
           PlayerInfoMSG* player_infoes =
-              new PlayerInfoMSG{.my_player = my_player_info_packet->info,
-                                .other_player = other_player_info_packet->info};
+              new PlayerInfoMSG{.my_player = *my_player_info_packet,
+                                .other_player = *other_player_info_packet};
           {
             // 윈도우로 보내기
             ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                          static_cast<std::int8_t>(PKT_CAT::PLAYER_INFO),
+                          static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
                           reinterpret_cast<LPARAM>(player_infoes));
           }
 #ifndef NDEBUG
@@ -364,38 +371,44 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
           // 버퍼 처리
           std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), sizeof(PlayerInfoPacket) * 2),
-                      recved_buffer_size - sizeof(PlayerInfoPacket) * 2);
-          recved_buffer_size -= sizeof(PlayerInfoPacket) * 2;
+                      std::next(recv_buff.data(), kInfoPacketSize * 2),
+                      recved_buffer_size - kInfoPacketSize * 2);
+          recved_buffer_size -= kInfoPacketSize * 2;
           break;
         }
-        case PKT_CAT::CHANGE_MAP: {
+        case sendParam::PKT_CAT::CHANGE_MAP: {
+          using InfoType = std::int32_t;
+
+          int constexpr kInfoSize = sizeof(InfoType);
+          int constexpr kInfoHeaderSize = sizeof(HeaderType);
+          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
           // 데이터 다 받았는지 확인
-          if (sizeof(MapInfoPacket) > recved_buffer_size) {
+          if (kInfoPacketSize > recved_buffer_size) {
             unfinished = false;
             break;
           }
 
           // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
-          MapInfoPacket* map_info_packet =
-              reinterpret_cast<MapInfoPacket*>(recv_buff.data());
+          InfoType* map_num_info =
+              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
 
           // 윈도우로 보내기
-          ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                        static_cast<std::int8_t>(PKT_CAT::CHANGE_MAP),
-                        (LPARAM)map_info_packet->info.mapNum);
+          ::PostMessage(
+              window_handle, WM_NETWORK_INFORM,
+              static_cast<std::int8_t>(sendParam::PKT_CAT::CHANGE_MAP),
+              (LPARAM)map_num_info);
 
 #ifndef NDEBUG
           std::println(wow, "MapInfo recv  {} = {}", return_value,
-                       map_info_packet->info.mapNum);
+                       *map_num_info);
           wow.emit();
 #endif  // !NDEBUG
 
           // 버퍼 처리
           std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), sizeof(MapInfoPacket)),
-                      recved_buffer_size - sizeof(MapInfoPacket));
-          recved_buffer_size -= sizeof(MapInfoPacket);
+                      std::next(recv_buff.data(), kInfoPacketSize),
+                      recved_buffer_size - kInfoPacketSize);
+          recved_buffer_size -= kInfoPacketSize;
           break;
         }
         default: {
@@ -567,6 +580,7 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
 
         map_num = 1;
         InitPlayer(g_player);
+        InitPlayer(otherPlayer);
         // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
         // warking으로 플레이어 출력되는지 확인용
         spriteX = 0;
@@ -600,7 +614,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
   HDC mDC;
   HBITMAP hBitmap;
   RECT rt;
-
+  LPARAM static network_checked_deallocated{};
   static int playerFrameIndex = 0;
 
   switch (message) {
@@ -708,42 +722,71 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       break;
     }
     case WM_NETWORK_INFORM: {
-      using namespace game_protocol;
-
+      using HeaderType = sendParam::PKT_CAT;
       std::int8_t curr_cat = LOBYTE(wParam);
+
+      if (lParam == network_checked_deallocated) {
+        break;
+      } else {
+        network_checked_deallocated = lParam;
+      }
+
       // recv에서 보낸 정보 처리
-      switch (static_cast<PKT_CAT>(curr_cat)) {
-        case PKT_CAT::PLAYER_INFO: {
-          {
-            PlayerInfoMSG* player_infoes =
-                reinterpret_cast<PlayerInfoMSG*>(lParam);
+      switch (static_cast<HeaderType>(curr_cat)) {
+        case HeaderType::PLAYER_INFO: {
+          PlayerInfoMSG* player_infoes =
+              reinterpret_cast<PlayerInfoMSG*>(lParam);
 
-            g_player.x = player_infoes->my_player.x;
-            g_player.y = player_infoes->my_player.y;
+          g_player.x = player_infoes->my_player.x;
+          g_player.y = player_infoes->my_player.y;
 
-            otherPlayer.x = player_infoes->other_player.x;
-            otherPlayer.y = player_infoes->other_player.y;
-          }
+          otherPlayer.x = player_infoes->other_player.x;
+          otherPlayer.y = player_infoes->other_player.y;
 
 #ifndef NDEBUG
           std::println(
-              wow, "player window get my x,y : ({}, {}), other x,y : ({}, {})",
+              wow,
+              "player window get my x,y : ({}, {}), other x, y : ({}, {}) ",
               g_player.x, g_player.y, otherPlayer.x, otherPlayer.y);
           wow.emit();
           wow.flush();
 #endif  // !NDEBUG
+          delete player_infoes;
 
           break;
         }
-        case PKT_CAT::CHANGE_MAP: {
+        case sendParam::PKT_CAT::CHANGE_MAP: {
           // 맵 변경
-          int mapNum = LOWORD(lParam);
+          int const recv_map_num = LOWORD(lParam);
 
 #ifndef NDEBUG
-          std::println(wow, "mapNum window get {}", mapNum);
+          std::println(wow, "recv_map_num window get {} in map_num {}",
+                       recv_map_num, map_num);
           wow.emit();
           wow.flush();
 #endif  // !NDEBUG
+
+          if (recv_map_num != map_num) {
+            map_num = recv_map_num;
+            switch (map_num) {
+              case 1: {
+                InitMap(map, map0);
+                break;
+              }
+              case 2: {
+                InitMap(map, map1);
+                break;
+              }
+              case 3: {
+                InitMap(map, map2);
+                break;
+              }
+              case 4: {
+                break;
+              }
+            }
+          }
+
           break;
         }
       }
@@ -1072,9 +1115,6 @@ void Update() {
   }
   // 맵 변경을 전달받으면 출력 정보 초기화    ex) if(header == 2)
   /*
-  if (map_num == 1) InitMap(map, map1);
-  else if (map_num == 2) InitMap(map, map2);
-  else if (map_num == 3) InitMap(map, map3);
   InitPlayer();
   DeleteAllEnemies();
   DeleteAllBullets();
