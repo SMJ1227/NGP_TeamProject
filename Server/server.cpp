@@ -520,6 +520,7 @@ void updatePlayerD(
     }
   } 
   else if (g_matches[matchNum].p1 != ' ') {  // 점프 차징
+    printf("점프 차징\n");
     g_matches[matchNum].player1.spaceKeyReleased = false;
     if (g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
@@ -785,9 +786,24 @@ void updateSendParam(int matchNum) {
   g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
   g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
   g_matches[matchNum].SPlayer1.face = g_matches[matchNum].player1.face;
-  g_matches[matchNum].SPlayer1.acting = 0;  // 추후 충돌처리 이후 추가
+  char acting = 0;
+  acting = g_matches[matchNum].player1.isJumping ? 4
+      : g_matches[matchNum].player1.isCharging ? 2
+      : (g_matches[matchNum].player1.isCharging && g_matches[matchNum].player1.jumpSpeed <= -20) ? 3
+      : g_matches[matchNum].player1.isSliding ? 6
+      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? 5
+      : g_matches[matchNum].player1.dx != 0 ? 1 : 0;
+  g_matches[matchNum].SPlayer1.acting = acting;  // 추후 충돌처리 이후 추가
   // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
   g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
-  g_matches[matchNum].SPlayer2.acting = 0;  // 추후 충돌처리 이후 추가
+  g_matches[matchNum].SPlayer2.face = g_matches[matchNum].player2.face;
+  acting = g_matches[matchNum].player2.isJumping ? 4
+      : g_matches[matchNum].player2.isCharging ? 2
+      : (g_matches[matchNum].player2.isCharging && g_matches[matchNum].player2.jumpSpeed <= -20) ? 3
+      : g_matches[matchNum].player2.isSliding ? 6
+      : (g_matches[matchNum].player2.isJumping && g_matches[matchNum].player2.dy > 0) ? 5
+      : g_matches[matchNum].player2.dx != 0 ? 1 : 0;
+  g_matches[matchNum].SPlayer2.acting = acting;  // 추후 충돌처리 이후 추가
 }
+
