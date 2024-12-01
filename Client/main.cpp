@@ -197,6 +197,7 @@ Player otherPlayer;
 struct Item {
   int x, y;
   bool disable;
+  int interval;
 };
 vector<Item> g_items;
 
@@ -231,6 +232,10 @@ void DrawEnemies(HDC hDC);
 void DeleteAllEnemies();
 void DrawBullets(HDC hDC);
 void DeleteAllBullets();
+void CheckItemPlayerCollisions(vector<Item>& items, const Player& player);
+void ShootBullet();
+void MoveBullets();
+void CheckPlayerBulletCollisions(vector<Bullet>& bullets, const Player& player);
 
 // WinMain 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -590,6 +595,25 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
     }
     case 3: {
       Update();
+      // player1, 2와 아이템 충돌 확인
+
+      MoveBullets();
+      shootInterval++;
+      if (shootInterval >= 120) {
+        ShootBullet();
+        shootInterval = 0;
+      }
+
+      for (auto& item : g_items) {
+        if (item.interval <= 0) item.disable = false;
+        else item.interval--;
+      }
+
+      CheckItemPlayerCollisions(g_items, g_player);
+      CheckItemPlayerCollisions(g_items, otherPlayer);
+      CheckPlayerBulletCollisions(g_bullets, g_player);
+      CheckPlayerBulletCollisions(g_bullets, otherPlayer);
+
       break;
     }
   }
@@ -633,6 +657,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
     case WM_CHAR: {
       switch (wParam) {
         case 'Q':
+          // 다음 맵에서도 정상 출력되는지 테스트
+          map_num = 2;
+          InitMap(map, map1);
+          InitPlayer(g_player);
+          InitPlayer(otherPlayer);
+          DeleteAllEnemies();
+          DeleteAllBullets();
+          DeleteAllItems();
+          InitEnemy(map);
+          InitItems(map);
+          // 다음 맵에서도 정상 출력되는지 테스트
+          break;
         case 'q':
           PostQuitMessage(0);
           break;
@@ -769,14 +805,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
             switch (map_num) {
               case 1: {
                 InitMap(map, map0);
+                InitPlayer(g_player);
+                InitPlayer(otherPlayer);
+                DeleteAllEnemies();
+                DeleteAllBullets();
+                DeleteAllItems();
+                InitEnemy(map);
+                InitItems(map);
                 break;
               }
               case 2: {
                 InitMap(map, map1);
+                InitPlayer(g_player);
+                InitPlayer(otherPlayer);
+                DeleteAllEnemies();
+                DeleteAllBullets();
+                DeleteAllItems();
+                InitEnemy(map);
+                InitItems(map);
                 break;
               }
               case 3: {
                 InitMap(map, map2);
+                InitPlayer(g_player);
+                InitPlayer(otherPlayer);
+                DeleteAllEnemies();
+                DeleteAllBullets();
+                DeleteAllItems();
+                InitEnemy(map);
+                InitItems(map);
                 break;
               }
               case 4: {
@@ -1051,7 +1108,7 @@ void GenerateItem(int x, int y, int num) {
   Item newItem;
   newItem.x = x;
   newItem.y = y;
-  newItem.disable = true;
+  newItem.disable = false;
   g_items.push_back(newItem);
 }
 
@@ -1235,5 +1292,52 @@ void Update() {
     }
     spriteY2 = 0;
     spriteHeight2 = 24;
+  }
+}
+
+void CheckItemPlayerCollisions(vector<Item>& items, const Player& player) {
+  for (auto it = items.begin(); it != items.end();) {
+    if (player.x >= it->x * GRID && player.x <= (it->x + 1) * GRID &&
+        player.y >= it->y * GRID && player.y <= (it->y + 1) * GRID) {
+        it->disable = true;
+        it->interval = 60;
+    }
+    ++it;
+  }
+}
+
+void ShootBullet() {
+  for (const auto& enemy : g_enemies) {
+    Bullet newBullet;
+    newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
+    newBullet.y = enemy.y * GRID + GRID / 2;
+    newBullet.dx = 2;
+    newBullet.dy = 0;
+    g_bullets.push_back(newBullet);
+  }
+}
+
+void MoveBullets() {
+  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
+    it->x += it->dx;
+    it->y += it->dy;
+    if (it->x < 0 || it->x > BOARD_WIDTH) {
+      it = g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void CheckPlayerBulletCollisions(vector<Bullet>& bullets, const Player& player) {
+  for (auto it = bullets.begin(); it != bullets.end();) {
+    if (it->x >= player.x - PLAYER_SIZE &&
+        it->x <= player.x + PLAYER_SIZE &&
+        it->y >= player.y - PLAYER_SIZE &&
+        it->y <= player.y + PLAYER_SIZE) {
+      it = bullets.erase(it);
+    } else {
+      ++it;
+    }
   }
 }
