@@ -523,7 +523,6 @@ void updatePlayerD(
     }
   } 
   else if (g_matches[matchNum].p1 == ' ') {  // 점프 차징
-    printf("%d\r", g_matches[matchNum].player1.jumpSpeed);
     g_matches[matchNum].player1.spaceKeyReleased = false;
     if (!g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
@@ -680,7 +679,6 @@ void movePlayer(int matchNum) {
   }
 
   if (isSlopeGoRightCollision) {
-    g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = true;
 
     g_matches[matchNum].player1.dy = 1;  // 경사면 위에서 미끄러짐 속도
@@ -692,7 +690,6 @@ void movePlayer(int matchNum) {
   }
 
   if (isSlopeGoLeftCollision) {
-    g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = true;
 
     g_matches[matchNum].player1.dy = 1;  // 경사면 위에서 미끄러짐 속도
@@ -786,13 +783,12 @@ void updateSendParam(int matchNum) {
   g_matches[matchNum].SPlayer1.face = g_matches[matchNum].player1.face;
   char acting = 0;
   acting = 
-      (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? '4'
+      g_matches[matchNum].player1.isSliding ? '6'
+      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? '4'
       : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy < 0) ? '5'
       : (g_matches[matchNum].player1.isCharging && g_matches[matchNum].player1.jumpSpeed <= -18) ? '3'
       : g_matches[matchNum].player1.isCharging ? '2'
-      : g_matches[matchNum].player1.isSliding ? '6'
-      : g_matches[matchNum].player1.dx != 0 ? 1 : '0';
-  printf("   acting:%c\r", acting);
+      : g_matches[matchNum].player1.dx != 0 ? '1' : '0';
   g_matches[matchNum].SPlayer1.acting = acting;  // 추후 충돌처리 이후 추가
   // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
