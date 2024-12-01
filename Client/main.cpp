@@ -1,4 +1,4 @@
-#include <WS2tcpip.h>
+﻿#include <WS2tcpip.h>
 #include <atlImage.h>
 #include <math.h>
 #include <time.h>
@@ -187,12 +187,8 @@ UINT constexpr WM_NETWORK_INFORM = WM_USER + 1;
 // 전역 변수
 struct Player {
   int x, y;
-  bool isWarking;
-  bool isCharging;
-  bool isJumping;
-  bool isFalling;
-  bool isSliding;
   bool damaged;
+  char acting;
   bool face;
   bool EnhancedJumpPower;
 } g_player;
@@ -584,13 +580,6 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
         map_num = 1;
         InitPlayer(g_player);
         InitPlayer(otherPlayer);
-        // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
-        // warking으로 플레이어 출력되는지 확인용
-        spriteX = 0;
-        spriteY = 24;
-        spriteHeight = 24;
-        // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
-        // warking으로 플레이어 출력되는지 확인용
         InitMap(map, map0);
         InitEnemy(map);
         InitItems(map);
@@ -745,6 +734,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
           otherPlayer.x = player_infoes->other_player.x;
           otherPlayer.y = player_infoes->other_player.y;
+
+          g_player.acting = player_infoes->my_player.acting;
+          otherPlayer.acting = player_infoes->other_player.acting;
+
+          g_player.face = player_infoes->my_player.face;
+          otherPlayer.face = player_infoes->other_player.face;
 
 #ifndef NDEBUG
           std::println(
@@ -1013,8 +1008,7 @@ void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]) {
 void InitPlayer(Player& player) {
   player.x = (MAP_WIDTH - 7) * GRID;
   player.y = (MAP_HEIGHT - 4) * GRID;
-  player.isCharging = false;
-  player.isJumping = false;
+  player.acting = 0;
   player.damaged = false;
   player.face = 0;
 }
@@ -1136,9 +1130,9 @@ void Update() {
   // 타이머스레드에서 플레이어 상태를 전송할 때, 모든 상태를 보낼 필요가
   // 없어보임
   // 2. 각 플레이어 전용 스프라이트 오프셋 두 개
-
   // 플레이어1의 스프라이트 오프셋 업데이트
-  if (g_player.isWarking) {  // 걷기 스프라이트
+  // acting 0: idle, 1: walking, 2: charging, 3: chargedfull, 4: jumping, 5: falling, 6: sliding
+  if (g_player.acting == 1) {  // 걷기 스프라이트
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
       spriteY = 24;
@@ -1146,16 +1140,19 @@ void Update() {
     }
   }
 
-  else if (g_player.isCharging) {
+  else if (g_player.acting == 2) {
     spriteX = 0;
     spriteY = 116;
     spriteHeight = 22;
-    /*if (g_player.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈 이것도 상태
-    변수로 recv받는건? bool fullcharge spriteX = 30;
-    }*/
+    
+  }
+  else if (g_player.acting == 3) {
+    spriteX = 30;
+    spriteY = 116;
+    spriteHeight = 22;
   }
 
-  else if (g_player.isFalling) {
+  else if (g_player.acting == 5) {
     if ((spriteX += spriteWidth) > 119) {
       spriteX = 0;
     }
@@ -1163,7 +1160,7 @@ void Update() {
     spriteHeight = 29;
   }
 
-  else if (g_player.isJumping /*&& !g_player.isSliding*/) {
+  else if (g_player.acting == 4 /*&& !g_player.isSliding*/) {
     if ((spriteX += spriteWidth) > 59) {
       spriteX = 0;
     }
@@ -1171,7 +1168,7 @@ void Update() {
     spriteHeight = 39;
   }
 
-  else if (g_player.isSliding) {
+  else if (g_player.acting == 6) {
     if ((spriteX += spriteWidth) > 29) {
       spriteX = 0;
     }
@@ -1179,7 +1176,7 @@ void Update() {
     spriteHeight = 25;
   }
 
-  else {
+  else if(g_player.acting == 0){
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
     }
@@ -1188,7 +1185,7 @@ void Update() {
   }
 
   // 플레이어2의 스프라이트 오프셋 업데이트
-  if (otherPlayer.isWarking) {  // 걷기 스프라이트
+  if (otherPlayer.acting == 1) {  // 걷기 스프라이트
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
       spriteY2 = 24;
@@ -1196,16 +1193,19 @@ void Update() {
     }
   }
 
-  else if (otherPlayer.isCharging) {
+  else if (otherPlayer.acting == 2) {
     spriteX2 = 0;
     spriteY2 = 116;
     spriteHeight2 = 22;
-    /*if (otherPlayer.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈
-      spriteX2 = 30;
-    }*/
   }
 
-  else if (otherPlayer.isFalling) {
+  else if (otherPlayer.acting == 3) {
+    spriteX2 = 30;
+    spriteY2 = 116;
+    spriteHeight2 = 22;
+  }
+
+  else if (otherPlayer.acting == 5) {
     if ((spriteX2 += spriteWidth) > 119) {
       spriteX2 = 0;
     }
@@ -1213,7 +1213,7 @@ void Update() {
     spriteHeight2 = 29;
   }
 
-  else if (otherPlayer.isJumping /*&& !g_player.isSliding*/) {
+  else if (otherPlayer.acting == 4 /*&& !g_player.isSliding*/) {
     if ((spriteX2 += spriteWidth) > 59) {
       spriteX2 = 0;
     }
@@ -1221,7 +1221,7 @@ void Update() {
     spriteHeight2 = 39;
   }
 
-  else if (otherPlayer.isSliding) {
+  else if (otherPlayer.acting == 6) {
     if ((spriteX2 += spriteWidth) > 29) {
       spriteX2 = 0;
     }
@@ -1229,7 +1229,7 @@ void Update() {
     spriteHeight2 = 25;
   }
 
-  else {
+  else if (otherPlayer.acting == 0){
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
     }
