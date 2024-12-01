@@ -189,7 +189,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
           g_matches[matchNum].p1 = input;
         }
       }
-       std::println("{}매치 {}플레이어에게 받은 데이터: {:?}", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
+      // std::println("{}매치 {}플레이어에게 받은 데이터: {:?}", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
     else if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
@@ -262,10 +262,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 
     EnterCriticalSection(&cs);
     // 플레이어 dx dy 변화
-     printf("match %d: %c\r", matchNum, g_matches[matchNum].p1);
     updatePlayerD(matchNum);
-    // printf("%d, %d\n", g_matches[matchNum].player1.dx,
-    // g_matches[matchNum].player1.dy);
     applyGravity(matchNum);
     movePlayer(matchNum);
     // moveBullets();
@@ -276,8 +273,6 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     // 오브젝트 충돌처리
     // sendParam업데이트
     updateSendParam(matchNum);
-    //printf("match %d: %d, %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
-    //       g_matches[matchNum].SPlayer1.y, g_matches[matchNum].SPlayer1.face);
     LeaveCriticalSection(&cs);
     // send 부분
     char sendBuf[1 + BUFSIZE];
@@ -505,7 +500,7 @@ void initAll(int matchNum) {
 }
 
 void updatePlayerD(
-    int matchNum) {  // a로 바꿔버리기때문에 한번만 dx연산이 이루어진다.
+    int matchNum) {
   // player1 처리
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
@@ -528,7 +523,7 @@ void updatePlayerD(
     }
   } 
   else if (g_matches[matchNum].p1 == ' ') {  // 점프 차징
-    printf("점프 차징\n");
+    printf("%d\r", g_matches[matchNum].player1.jumpSpeed);
     g_matches[matchNum].player1.spaceKeyReleased = false;
     if (!g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
@@ -538,7 +533,6 @@ void updatePlayerD(
       g_matches[matchNum].player1.isCharging = true;
       g_matches[matchNum].player1.dx = 0;
       g_matches[matchNum].player1.jumpSpeed -= 2;
-      printf("%d\r", g_matches[matchNum].player1.jumpSpeed);
       if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
         g_matches[matchNum].player1.jumpSpeed = -20;
       }
@@ -574,10 +568,10 @@ void updatePlayerD(
 
 void applyGravity(int matchNum) {
   if (g_matches[matchNum].player1.dy < 20) {
-    g_matches[matchNum].player1.dy += GRAVITY;  // 중력 적용
+    g_matches[matchNum].player1.dy += GRAVITY;
   }
   if (g_matches[matchNum].player2.dy < 20) {
-    g_matches[matchNum].player2.dy += GRAVITY;  // 중력 적용
+    g_matches[matchNum].player2.dy += GRAVITY;
   }
 }
 
@@ -686,6 +680,7 @@ void movePlayer(int matchNum) {
   }
 
   if (isSlopeGoRightCollision) {
+    g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = true;
 
     g_matches[matchNum].player1.dy = 1;  // 경사면 위에서 미끄러짐 속도
@@ -697,6 +692,7 @@ void movePlayer(int matchNum) {
   }
 
   if (isSlopeGoLeftCollision) {
+    g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = true;
 
     g_matches[matchNum].player1.dy = 1;  // 경사면 위에서 미끄러짐 속도
@@ -789,12 +785,14 @@ void updateSendParam(int matchNum) {
   g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
   g_matches[matchNum].SPlayer1.face = g_matches[matchNum].player1.face;
   char acting = 0;
-  acting = g_matches[matchNum].player1.isJumping ? 4
-      : g_matches[matchNum].player1.isCharging ? 2
-      : (g_matches[matchNum].player1.isCharging && g_matches[matchNum].player1.jumpSpeed <= -20) ? 3
-      : g_matches[matchNum].player1.isSliding ? 6
-      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? 5
-      : g_matches[matchNum].player1.dx != 0 ? 1 : 0;
+  acting = 
+      (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? '4'
+      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy < 0) ? '5'
+      : (g_matches[matchNum].player1.isCharging && g_matches[matchNum].player1.jumpSpeed <= -18) ? '3'
+      : g_matches[matchNum].player1.isCharging ? '2'
+      : g_matches[matchNum].player1.isSliding ? '6'
+      : g_matches[matchNum].player1.dx != 0 ? 1 : '0';
+  printf("   acting:%c\r", acting);
   g_matches[matchNum].SPlayer1.acting = acting;  // 추후 충돌처리 이후 추가
   // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;

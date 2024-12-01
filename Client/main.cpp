@@ -1132,7 +1132,7 @@ void Update() {
   // 2. 각 플레이어 전용 스프라이트 오프셋 두 개
   // 플레이어1의 스프라이트 오프셋 업데이트
   // acting 0: idle, 1: walking, 2: charging, 3: chargedfull, 4: jumping, 5: falling, 6: sliding
-  if (g_player.acting == 1) {  // 걷기 스프라이트
+  if (g_player.acting == '1') {  // 걷기 스프라이트
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
       spriteY = 24;
@@ -1140,19 +1140,19 @@ void Update() {
     }
   }
 
-  else if (g_player.acting == 2) {
+  else if (g_player.acting == '2') {
     spriteX = 0;
     spriteY = 116;
     spriteHeight = 22;
     
   }
-  else if (g_player.acting == 3) {
+  else if (g_player.acting == '3') {
     spriteX = 30;
     spriteY = 116;
     spriteHeight = 22;
   }
 
-  else if (g_player.acting == 5) {
+  else if (g_player.acting == '5') {
     if ((spriteX += spriteWidth) > 119) {
       spriteX = 0;
     }
@@ -1160,7 +1160,7 @@ void Update() {
     spriteHeight = 29;
   }
 
-  else if (g_player.acting == 4 /*&& !g_player.isSliding*/) {
+  else if (g_player.acting == '4' /*&& !g_player.isSliding*/) {
     if ((spriteX += spriteWidth) > 59) {
       spriteX = 0;
     }
@@ -1168,7 +1168,7 @@ void Update() {
     spriteHeight = 39;
   }
 
-  else if (g_player.acting == 6) {
+  else if (g_player.acting == '6') {
     if ((spriteX += spriteWidth) > 29) {
       spriteX = 0;
     }
@@ -1176,7 +1176,7 @@ void Update() {
     spriteHeight = 25;
   }
 
-  else if(g_player.acting == 0){
+  else if(g_player.acting == '0'){
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
     }
@@ -1185,7 +1185,7 @@ void Update() {
   }
 
   // 플레이어2의 스프라이트 오프셋 업데이트
-  if (otherPlayer.acting == 1) {  // 걷기 스프라이트
+  if (otherPlayer.acting == '1') {  // 걷기 스프라이트
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
       spriteY2 = 24;
@@ -1193,19 +1193,19 @@ void Update() {
     }
   }
 
-  else if (otherPlayer.acting == 2) {
+  else if (otherPlayer.acting == '2') {
     spriteX2 = 0;
     spriteY2 = 116;
     spriteHeight2 = 22;
   }
 
-  else if (otherPlayer.acting == 3) {
+  else if (otherPlayer.acting == '3') {
     spriteX2 = 30;
     spriteY2 = 116;
     spriteHeight2 = 22;
   }
 
-  else if (otherPlayer.acting == 5) {
+  else if (otherPlayer.acting == '5') {
     if ((spriteX2 += spriteWidth) > 119) {
       spriteX2 = 0;
     }
@@ -1213,7 +1213,7 @@ void Update() {
     spriteHeight2 = 29;
   }
 
-  else if (otherPlayer.acting == 4 /*&& !g_player.isSliding*/) {
+  else if (otherPlayer.acting == '4' /*&& !g_player.isSliding*/) {
     if ((spriteX2 += spriteWidth) > 59) {
       spriteX2 = 0;
     }
@@ -1221,7 +1221,7 @@ void Update() {
     spriteHeight2 = 39;
   }
 
-  else if (otherPlayer.acting == 6) {
+  else if (otherPlayer.acting == '6') {
     if ((spriteX2 += spriteWidth) > 29) {
       spriteX2 = 0;
     }
@@ -1229,7 +1229,7 @@ void Update() {
     spriteHeight2 = 25;
   }
 
-  else if (otherPlayer.acting == 0){
+  else if (otherPlayer.acting == '0'){
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
     }
