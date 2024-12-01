@@ -455,98 +455,110 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   return 0;
 }
 
-DWORD WINAPI SendClient(LPVOID lp_param) {
-  SOCKET server_sock = (SOCKET)lp_param;
-  int return_value{};
+DWORD WINAPI SendClient(LPVOID lp_param)
+{
+    SOCKET server_sock = (SOCKET)lp_param;
+    int return_value{};
 
-  USHORT left_check_value{};
-  USHORT right_check_value{};
-  USHORT space_check_value{};
+    USHORT left_check_value{};
+    USHORT right_check_value{};
+    USHORT space_check_value{};
 
-  bool is_pressed_left{false};
-  bool is_pressed_right{false};
-  bool is_pressed_space{false};
-  bool was_pressed_space{false};
+    bool is_pressed_left{false};
+    bool is_pressed_right{false};
+    bool is_pressed_space{false};
+    bool was_pressed_space{false};
 
-  std::vector<char> buffer{};
-  buffer.reserve(3);
+    std::vector<char> buffer{};
+    buffer.reserve(3);
 
-  while (true) {
-    // �Է� ���� Ȯ��
-    left_check_value = GetAsyncKeyState(VK_LEFT);
-    right_check_value = GetAsyncKeyState(VK_RIGHT);
-    space_check_value = GetAsyncKeyState(VK_SPACE);
+    while (true)
+    {
+        // �Է� ���� Ȯ��
+        left_check_value = GetAsyncKeyState(VK_LEFT);
+        right_check_value = GetAsyncKeyState(VK_RIGHT);
+        space_check_value = GetAsyncKeyState(VK_SPACE);
 
-    // 버퍼 정리
-    buffer.clear();
+        // 버퍼 정리
+        buffer.clear();
 
-    // 유효 입력 처리
+        // 유효 입력 처리
 
-    // 좌우 처리
-    is_pressed_left = (left_check_value & 0x8000) != 0;
-    is_pressed_right = (right_check_value & 0x8000) != 0;
+        // 좌우 처리
+        is_pressed_left = (left_check_value & 0x8000) != 0;
+        is_pressed_right = (right_check_value & 0x8000) != 0;
 
-    if (!(is_pressed_left && is_pressed_right)) {
-      if (is_pressed_left) {
-        buffer.push_back('0');
-      }
-      if (is_pressed_right) {
-        buffer.push_back('1');
-      }
-    }
+        if (!(is_pressed_left && is_pressed_right))
+        {
+            if (is_pressed_left)
+            {
+                buffer.push_back('0');
+            }
+            if (is_pressed_right)
+            {
+                buffer.push_back('1');
+            }
+        }
 
-    //
-    is_pressed_space = (space_check_value & 0x8000) != 0;
+        //
+        is_pressed_space = (space_check_value & 0x8000) != 0;
 
-    if (is_pressed_space && !was_pressed_space) {
-      buffer.push_back(' ');
-      was_pressed_space = true;
-
-#ifndef NDEBUG
-      std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
-#endif  // NDEBUG
-    } else if (!is_pressed_space && was_pressed_space) {
-      buffer.push_back('\b');
-      was_pressed_space = false;
+        if (is_pressed_space && !was_pressed_space)
+        {
+            buffer.push_back(' ');
+            was_pressed_space = true;
 
 #ifndef NDEBUG
-      std::println(wow,
-                   "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
+            std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                         return_value, std::string_view{buffer}, buffer.size(),
+                         left_check_value, right_check_value, space_check_value);
+            wow.emit();
+            wow.flush();
 #endif  // NDEBUG
+        }
+        else if (!is_pressed_space && was_pressed_space)
+        {
+            buffer.push_back('\b');
+            was_pressed_space = false;
+
+#ifndef NDEBUG
+            std::println(wow,
+                         "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                         return_value, std::string_view{buffer}, buffer.size(),
+                         left_check_value, right_check_value, space_check_value);
+            wow.emit();
+            wow.flush();
+#endif  // NDEBUG
+        }
+
+        // 눌린 것이 없으면 넘김
+        if (buffer.empty())
+        {
+            std::this_thread::yield();
+            continue;
+        }
+
+        // 전송 및 로그
+        return_value = send(server_sock, buffer.data(), buffer.size(), 0);
+
+        switch (return_value)
+        {
+        case SOCKET_ERROR:
+        {
+            err_quit("result of send : sock error");
+            break;
+        }
+        case 0:
+        {
+            err_quit("result of send : server disconnect");
+            break;
+        }
+        }
+
+        // 입력 대기
+        Sleep(1000 / 60);
     }
-
-    // 눌린 것이 없으면 넘김
-    if (buffer.empty()) {
-      std::this_thread::yield();
-      continue;
-    }
-
-    // 전송 및 로그
-    return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-
-    switch (return_value) {
-      case SOCKET_ERROR: {
-        err_quit("result of send : sock error");
-        break;
-      }
-      case 0: {
-        err_quit("result of send : server disconnect");
-        break;
-      }
-    }
-
-    // 입력 대기
-    Sleep(1000 / 60);
-  }
-  return 0;
+    return 0;
 }
 
 //--- CImage 관련 변수 선언
@@ -578,57 +590,57 @@ void Update();
 void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   switch (idEvent) {
     case 2: {
-      if ((GetAsyncKeyState('s') & 0x8000) ||
+        if ((GetAsyncKeyState('s') & 0x8000) ||
           (GetAsyncKeyState('S') & 0x8000)) {
-        // 접속 시도
-        int return_value{};
-        SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
+            // 접속 시도
+            int return_value{};
+            SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (INVALID_SOCKET == server_sock) {
-          err_quit("socket() 호출");
-        }
+                err_quit("socket() 호출");
+            }
 
-        DWORD opt_val = 1;
+            DWORD opt_val = 1;
         setsockopt(server_sock, IPPROTO_TCP, TCP_NODELAY, (char const*)&opt_val,
-                   sizeof(opt_val));
-        sockaddr_in serveraddr{.sin_family = AF_INET,
+                       sizeof(opt_val));
+            sockaddr_in serveraddr{.sin_family = AF_INET,
                                .sin_port = htons(game_protocol::g_server_port)};
-        return_value =
-            inet_pton(AF_INET, game_protocol::g_server_address.data(),
-                      &serveraddr.sin_addr);
+            return_value =
+                inet_pton(AF_INET, game_protocol::g_server_address.data(),
+                          &serveraddr.sin_addr);
         if (SOCKET_ERROR == return_value) {
-          err_quit("유효하지 않은 주소가 입력되었습니다.");
-        }
+                err_quit("유효하지 않은 주소가 입력되었습니다.");
+            }
 
-        return_value =
+            return_value =
             connect(server_sock, reinterpret_cast<sockaddr const*>(&serveraddr),
-                    sizeof(serveraddr));
+                        sizeof(serveraddr));
         if (return_value == SOCKET_ERROR) {
-          err_quit("connect() 호출");
-        }
+                err_quit("connect() 호출");
+            }
 
-        // 접속 성공시 ClientSend, CliendRecv 생성
-        g_hSendThread =
-            CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
+            // 접속 성공시 ClientSend, CliendRecv 생성
+            g_hSendThread =
+                CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
 
-        auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
-                                              .window_handle = hWnd};
+            auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
+                                                  .window_handle = hWnd};
         g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
-        recvParam = nullptr;
+            recvParam = nullptr;
 
-        map_num = 1;
-        InitPlayer(g_player);
-        InitPlayer(otherPlayer);
-        InitMap(map, map0);
-        InitEnemy(map);
-        InitItems(map);
-        KillTimer(hWnd, 2);
-        SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
-      }
-      break;
+            map_num = 1;
+            InitPlayer(g_player);
+            InitPlayer(otherPlayer);
+            InitMap(map, map0);
+            InitEnemy(map);
+            InitItems(map);
+            KillTimer(hWnd, 2);
+            SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
+        }
+        break;
     }
     case 3: {
-      Update();
-      // player1, 2와 아이템 충돌 확인
+        Update();
+        // player1, 2와 아이템 충돌 확인
 
       for (auto& item : g_items) {
         if (item.interval <= 0)
@@ -641,20 +653,13 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       CheckItemPlayerCollisions(g_items, otherPlayer);
 
       // 서버에서 충돌처리 된 대로 총알 출력하는 것으로 결정
-      // CheckPlayerBulletCollisions(g_bullets, g_player);
-      // CheckPlayerBulletCollisions(g_bullets, otherPlayer);
-      // MoveBullets();
-      // shootInterval++;
-      // if (shootInterval >= 120) {
-      //   ShootBullet();
-      //   shootInterval = 0;
-      // }
 
-      break;
+
+        break;
     }
-  }
+    }
 
-  InvalidateRect(hWnd, NULL, FALSE);
+    InvalidateRect(hWnd, NULL, FALSE);
 }
 
 // 메인 함수
@@ -706,7 +711,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           // 다음 맵에서도 정상 출력되는지 테스트
           break;
         case 'q':
-          PostQuitMessage(0);
+            PostQuitMessage(0);
           break;
       }
       break;
@@ -1213,14 +1218,6 @@ void Update() {
   for (auto& item : g_items) {
     // item의 disable을 전달받은 disable로 업데이트
   }
-  // 맵 변경을 전달받으면 출력 정보 초기화    ex) if(header == 2)
-  /*
-  InitPlayer();
-  DeleteAllEnemies();
-  DeleteAllBullets();
-  DeleteAllItems();
-  InitEnemy(map);
-  InitItems(map);*/
 
   if (map_num == 4 /*|| 게임 종료(연결 끊김)*/) {
     // 4번째 맵 또는 게임 종료를 전달받으면 종료시 필요한 정보로 업데이트
