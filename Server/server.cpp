@@ -142,7 +142,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr,
+  printf("\n[TCP server] client connect: IP address=%s, port number=%d\n", addr,
          ntohs(clientaddr.sin_port));
 
   while (1) {
@@ -177,19 +177,27 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
 
     // 받은 데이터 출력
     buf[retval] = '\0';
-    char input = buf[0];
+    char input0 = buf[0];
+    char input1 = buf[1];
+    std::println("{}match player{} recv data: {:?}, {:?}", matchNum,
+                 playerNum, buf[0], buf[1]);
     if (playerNum == 0) {
-      if (!g_matches[matchNum].player1.isCharging) {
-        g_matches[matchNum].p1 = input;
+      if (buf[1] == '\0') { // 하나의 값만 들어옴
+        if (!g_matches[matchNum].player1.isCharging) {
+          g_matches[matchNum].p1 = input0;
+        } 
+        else {
+          if (input0 == ' ') {
+            g_matches[matchNum].p1 = input0;
+          } 
+          else if (input0 == '\b') {
+            g_matches[matchNum].p1 = input0;
+          }
+        }
       } 
       else {
-        if (input == ' ') {
-          g_matches[matchNum].p1 = input;
-        } else if (input == '\b') {
-          g_matches[matchNum].p1 = input;
-        }
+        g_matches[matchNum].p1 = input1;
       }
-      // std::println("{}매치 {}플레이어에게 받은 데이터: {:?}", matchNum, playerNum, buf[0]);    // 왼쪽 0, 오른쪽 1, 스페이스 입력때 한번, 땔때 한번
     }
     else if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
@@ -207,7 +215,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   }
   // 소켓 닫기
   closesocket(client_sock);
-  printf("[TCP 서버] 클라이언트 종료: IP 주소=%s, 포트 번호=%d\n", addr,
+  printf("[TCP server] client quit: IP address=%s, port number=%d\n", addr,
          ntohs(clientaddr.sin_port));
   return 0;
 }
@@ -499,8 +507,7 @@ void initAll(int matchNum) {
   initEnemy(matchNum);
 }
 
-void updatePlayerD(
-    int matchNum) {
+void updatePlayerD(int matchNum) {
   // player1 처리
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
@@ -802,4 +809,3 @@ void updateSendParam(int matchNum) {
       : g_matches[matchNum].player2.dx != 0 ? 1 : 0;
   g_matches[matchNum].SPlayer2.acting = acting;  // 추후 충돌처리 이후 추가
 }
-
