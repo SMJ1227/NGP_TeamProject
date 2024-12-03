@@ -1,4 +1,4 @@
-#include <WS2tcpip.h>
+﻿#include <WS2tcpip.h>
 #include <atlImage.h>
 #include <math.h>
 #include <time.h>
@@ -187,12 +187,8 @@ UINT constexpr WM_NETWORK_INFORM = WM_USER + 1;
 // 전역 변수
 struct Player {
   int x, y;
-  bool isWarking;
-  bool isCharging;
-  bool isJumping;
-  bool isFalling;
-  bool isSliding;
   bool damaged;
+  char acting;
   bool face;
   bool EnhancedJumpPower;
 } g_player;
@@ -201,6 +197,7 @@ Player otherPlayer;
 struct Item {
   int x, y;
   bool disable;
+  int interval;
 };
 vector<Item> g_items;
 
@@ -235,6 +232,10 @@ void DrawEnemies(HDC hDC);
 void DeleteAllEnemies();
 void DrawBullets(HDC hDC);
 void DeleteAllBullets();
+void CheckItemPlayerCollisions(vector<Item>& items, const Player& player);
+void ShootBullet();
+void MoveBullets();
+void CheckPlayerBulletCollisions(vector<Bullet>& bullets, const Player& player);
 
 // WinMain 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -299,9 +300,10 @@ struct PlayerInfoMSG {
   sendParam::sendParam my_player, other_player;
 };
 
-DWORD WINAPI RecvClient(LPVOID lp_param) {
-  auto [server_sock, window_handle] =
-      *(reinterpret_cast<RecvClientParam*>(lp_param));
+DWORD WINAPI RecvClient(LPVOID lp_param)
+{
+    auto [server_sock, window_handle] =
+        *(reinterpret_cast<RecvClientParam*>(lp_param));
 
   delete reinterpret_cast<RecvClientParam*>(lp_param);
 
@@ -310,86 +312,102 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   std::array<char, BUFF_SIZE> recv_buff{};
   int recved_buffer_size{};
 
-  while (true) {
-    // 데이터 받기
-    return_value =
-        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size() - recved_buffer_size, 0);
-    switch (return_value) {
-      case SOCKET_ERROR: {
-        // 수신 문제
-        err_display(" : recv error");
-        return -1;
-      }
-      case 0: {
-        // 접속 종료 시 처리
-        err_display(" : disconnected");
-        return -1;
-      }
-    }
-    // 받은 데이터 크기 반영
-    recved_buffer_size += return_value;
+    while (true)
+    {
+        // 데이터 받기
+        return_value =
+            recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
+                 recv_buff.size() - recved_buffer_size, 0);
+        switch (return_value)
+        {
+        case SOCKET_ERROR:
+        {
+            // 수신 문제
+            err_display(" : recv error");
+            return -1;
+        }
+        case 0:
+        {
+            // 접속 종료 시 처리
+            err_display(" : disconnected");
+            return -1;
+        }
+        }
+        // 받은 데이터 크기 반영
+        recved_buffer_size += return_value;
 
-    for (bool unfinished = true; unfinished;) {
-      // 받은 데이터 처리
-      using HeaderType = sendParam::PKT_CAT;
-      int constexpr kInfoHeaderSize = sizeof(HeaderType);
-      HeaderType* header = reinterpret_cast<HeaderType*>(recv_buff.data());
-      switch (static_cast<HeaderType>(*header)) {
-        case sendParam::PKT_CAT::PLAYER_INFO: {
-          using InfoType = sendParam::sendParam;
+        for (bool unfinished = true; unfinished;)
+        {
+            // 받은 데이터 처리
+            using HeaderType = sendParam::PKT_CAT;
+            auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
+            switch (static_cast<HeaderType>(*header))
+            {
+            case sendParam::PKT_CAT::PLAYER_INFO:
+            {
+                using InfoType = sendParam::sendParam;
 
           int constexpr kInfoSize = sizeof(InfoType);
+          int constexpr kInfoHeaderSize = sizeof(HeaderType);
           int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
 
-          // 데이터를 다 받았는지 확인
-          if (kInfoPacketSize * 2 > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
+                // 데이터를 다 받았는지 확인
+                if (kInfoPacketSize * 2 > recved_buffer_size)
+                {
+                    unfinished = false;
+                    break;
+                }
 
-          // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          InfoType* my_player_info_packet =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+                // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
+                auto my_player_info_packet =
+                    reinterpret_cast<InfoType*>(recv_buff.data() +
+                        kInfoHeaderSize);
 
-          InfoType* other_player_info_packet = reinterpret_cast<InfoType*>(
-              std::next(recv_buff.data(), kInfoPacketSize + kInfoHeaderSize));
+                auto other_player_info_packet = reinterpret_cast<InfoType*>(
+                    std::next(recv_buff.data(),
+                              kInfoPacketSize + kInfoHeaderSize));
 
-          PlayerInfoMSG* player_infoes =
-              new PlayerInfoMSG{.my_player = *my_player_info_packet,
-                                .other_player = *other_player_info_packet};
-          {
-            // 윈도우로 보내기
-            ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                          static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
-                          reinterpret_cast<LPARAM>(player_infoes));
-          }
+                auto player_infoes =
+                    new PlayerInfoMSG{.my_player = *my_player_info_packet,
+                                      .other_player = *
+                                      other_player_info_packet};
+
+                // 윈도우로 보내기
+                ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                              static_cast<std::int8_t>(
+                                  HeaderType::PLAYER_INFO),
+                              reinterpret_cast<LPARAM>(player_infoes));
+
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = ", return_value);
           wow.emit();
 #endif  // !NDEBUG
 
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize * 2),
-                      recved_buffer_size - kInfoPacketSize * 2);
-          recved_buffer_size -= kInfoPacketSize * 2;
-          break;
-        }
-        case sendParam::PKT_CAT::CHANGE_MAP: {
-          using InfoType = std::int32_t;
+                // 버퍼 처리
+                std::memcpy(recv_buff.data(),
+                            std::next(recv_buff.data(), kInfoPacketSize * 2),
+                            recved_buffer_size - kInfoPacketSize * 2);
+                recved_buffer_size -= kInfoPacketSize * 2;
+                break;
+            }
+            case sendParam::PKT_CAT::CHANGE_MAP:
+            {
+                using InfoType = std::int32_t;
 
-          int constexpr kInfoSize = sizeof(InfoType);
-          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
-          // 데이터 다 받았는지 확인
-          if (kInfoPacketSize > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
+                int constexpr kInfoSize = sizeof(InfoType);
+                int constexpr kInfoHeaderSize = sizeof(HeaderType);
+                int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+                // 데이터 다 받았는지 확인
+                if (kInfoPacketSize > recved_buffer_size)
+                {
+                    unfinished = false;
+                    break;
+                }
 
-          // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
-          InfoType* map_num_info =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+                // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
+                auto map_num_info =
+                    reinterpret_cast<InfoType*>(recv_buff.data() +
+                        kInfoHeaderSize);
 
           // 윈도우로 보내기
           ::PostMessage(
@@ -403,47 +421,22 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           wow.emit();
 #endif  // !NDEBUG
 
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize),
-                      recved_buffer_size - kInfoPacketSize);
-          recved_buffer_size -= kInfoPacketSize;
-          break;
+                // 버퍼 처리
+                std::memcpy(recv_buff.data(),
+                            std::next(recv_buff.data(), kInfoPacketSize),
+                            recved_buffer_size - kInfoPacketSize);
+                recved_buffer_size -= kInfoPacketSize;
+                break;
+            }
+            default:
+            {
+                err_display(" : recv buffer handle error");
+                break;
+            }
+            }
         }
-        case sendParam::PKT_CAT::ITEM_INFO: {
-          using InfoType = sendParam::sendItemActive;
-          int constexpr kInfoSize = sizeof(InfoType);
-          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
-
-          if (kInfoPacketSize > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
-
-          InfoType* item_info =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
-
-          sendParam::sendItemActive* item_info_msg =
-              new sendParam::sendItemActive{*item_info};
-
-          ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                        static_cast<std::int8_t>(sendParam::PKT_CAT::ITEM_INFO),
-                        (LPARAM)item_info_msg);
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize),
-                      recved_buffer_size - kInfoPacketSize);
-          recved_buffer_size -= kInfoPacketSize;
-          break;
-        }
-        default: {
-          err_display(" : recv buffer handle error");
-          break;
-        }
-      }
     }
-  }
-  return 0;
+    return 0;
 }
 
 DWORD WINAPI SendClient(LPVOID lp_param) {
@@ -494,8 +487,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       was_pressed_space = true;
 
 #ifndef NDEBUG
-      std::println(wow,
-                   "send sp {} = {:?}:{} left {:0x} right {:0x} space {:0x}",
+      std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
                    return_value, std::string_view{buffer}, buffer.size(),
                    left_check_value, right_check_value, space_check_value);
       wow.emit();
@@ -507,7 +499,7 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
 
 #ifndef NDEBUG
       std::println(wow,
-                   "send bsp {} = {:?}:{} left {:0x} right {:0x} space {:0x}",
+                   "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
                    return_value, std::string_view{buffer}, buffer.size(),
                    left_check_value, right_check_value, space_check_value);
       wow.emit();
@@ -520,15 +512,6 @@ DWORD WINAPI SendClient(LPVOID lp_param) {
       std::this_thread::yield();
       continue;
     }
-
-#ifndef NDEBUG
-    std::println(wow,
-                 "send input {} = {:?}:{} left {:0x} right {:0x} space {:0x}",
-                 return_value, std::string_view{buffer}, buffer.size(),
-                 left_check_value, right_check_value, space_check_value);
-    wow.emit();
-    wow.flush();
-#endif  // NDEBUG
 
     // 전송 및 로그
     return_value = send(server_sock, buffer.data(), buffer.size(), 0);
@@ -578,64 +561,84 @@ void Update();
 // 타이머 콜백
 void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   switch (idEvent) {
-    case 2: {
+  case 2:
+  {
       if ((GetAsyncKeyState('s') & 0x8000) ||
-          (GetAsyncKeyState('S') & 0x8000)) {
-        // 접속 시도
-        int return_value{};
-        SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (INVALID_SOCKET == server_sock) {
-          err_quit("socket() 호출");
-        }
+          (GetAsyncKeyState('S') & 0x8000))
+      {
+          // 접속 시도
+          int return_value{};
+          SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
+          if (INVALID_SOCKET == server_sock)
+          {
+              err_quit("socket() 호출");
+          }
 
-        DWORD opt_val = 1;
-        setsockopt(server_sock, IPPROTO_TCP, TCP_NODELAY, (char const*)&opt_val,
-                   sizeof(opt_val));
-        sockaddr_in serveraddr{.sin_family = AF_INET,
-                               .sin_port = htons(game_protocol::g_server_port)};
-        return_value =
-            inet_pton(AF_INET, game_protocol::g_server_address.data(),
-                      &serveraddr.sin_addr);
-        if (SOCKET_ERROR == return_value) {
-          err_quit("유효하지 않은 주소가 입력되었습니다.");
-        }
+          DWORD opt_val = 1;
+          setsockopt(server_sock, IPPROTO_TCP, TCP_NODELAY,
+                     (char const*)&opt_val,
+                     sizeof(opt_val));
+          sockaddr_in serveraddr{.sin_family = AF_INET,
+                                 .sin_port = htons(
+                                     game_protocol::g_server_port)};
+          return_value =
+              inet_pton(AF_INET, game_protocol::g_server_address.data(),
+                        &serveraddr.sin_addr);
+          if (SOCKET_ERROR == return_value)
+          {
+              err_quit("유효하지 않은 주소가 입력되었습니다.");
+          }
 
-        return_value =
-            connect(server_sock, reinterpret_cast<sockaddr const*>(&serveraddr),
-                    sizeof(serveraddr));
-        if (return_value == SOCKET_ERROR) {
-          err_quit("connect() 호출");
-        }
+          return_value =
+              connect(server_sock,
+                      reinterpret_cast<sockaddr const*>(&serveraddr),
+                      sizeof(serveraddr));
+          if (return_value == SOCKET_ERROR)
+          {
+              err_quit("connect() 호출");
+          }
 
-        // 접속 성공시 ClientSend, CliendRecv 생성
-        g_hSendThread =
-            CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
+          // 접속 성공시 ClientSend, CliendRecv 생성
+          g_hSendThread =
+              CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
 
-        auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
-                                              .window_handle = hWnd};
-        g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
-        recvParam = nullptr;
+          auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
+                                                .window_handle = hWnd};
+          g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
+          recvParam = nullptr;
 
-        map_num = 1;
-        InitPlayer(g_player);
-        InitPlayer(otherPlayer);
-        // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
-        // warking으로 플레이어 출력되는지 확인용
-        spriteX = 0;
-        spriteY = 24;
-        spriteHeight = 24;
-        // ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ   init 위치에
-        // warking으로 플레이어 출력되는지 확인용
-        InitMap(map, map0);
-        InitEnemy(map);
-        InitItems(map);
-        KillTimer(hWnd, 2);
-        SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
+          map_num = 1;
+          InitPlayer(g_player);
+          InitPlayer(otherPlayer);
+          InitMap(map, map0);
+          InitEnemy(map);
+          InitItems(map);
+          KillTimer(hWnd, 2);
+          SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
       }
       break;
-    }
+  }
     case 3: {
       Update();
+      // player1, 2와 아이템 충돌 확인
+
+      MoveBullets();
+      shootInterval++;
+      if (shootInterval >= 120) {
+        ShootBullet();
+        shootInterval = 0;
+      }
+
+      for (auto& item : g_items) {
+        if (item.interval <= 0) item.disable = false;
+        else item.interval--;
+      }
+
+      CheckItemPlayerCollisions(g_items, g_player);
+      CheckItemPlayerCollisions(g_items, otherPlayer);
+      CheckPlayerBulletCollisions(g_bullets, g_player);
+      CheckPlayerBulletCollisions(g_bullets, otherPlayer);
+
       break;
     }
   }
@@ -679,6 +682,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
     case WM_CHAR: {
       switch (wParam) {
         case 'Q':
+          // 다음 맵에서도 정상 출력되는지 테스트
+          map_num = 2;
+          InitMap(map, map1);
+          InitPlayer(g_player);
+          InitPlayer(otherPlayer);
+          DeleteAllEnemies();
+          DeleteAllBullets();
+          DeleteAllItems();
+          InitEnemy(map);
+          InitItems(map);
+          // 다음 맵에서도 정상 출력되는지 테스트
+          break;
         case 'q':
           PostQuitMessage(0);
           break;
@@ -777,11 +792,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
           g_player.x = player_infoes->my_player.x;
           g_player.y = player_infoes->my_player.y;
-          g_player.face = player_infoes->my_player.face;
-
 
           otherPlayer.x = player_infoes->other_player.x;
           otherPlayer.y = player_infoes->other_player.y;
+
+          g_player.acting = player_infoes->my_player.acting;
+          otherPlayer.acting = player_infoes->other_player.acting;
+
+          g_player.face = player_infoes->my_player.face;
           otherPlayer.face = player_infoes->other_player.face;
 
 #ifndef NDEBUG
@@ -812,14 +830,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
             switch (map_num) {
               case 1: {
                 InitMap(map, map0);
+                InitPlayer(g_player);
+                InitPlayer(otherPlayer);
+                DeleteAllEnemies();
+                DeleteAllBullets();
+                DeleteAllItems();
+                InitEnemy(map);
+                InitItems(map);
                 break;
               }
               case 2: {
                 InitMap(map, map1);
+                InitPlayer(g_player);
+                InitPlayer(otherPlayer);
+                DeleteAllEnemies();
+                DeleteAllBullets();
+                DeleteAllItems();
+                InitEnemy(map);
+                InitItems(map);
                 break;
               }
               case 3: {
                 InitMap(map, map2);
+                InitPlayer(g_player);
+                InitPlayer(otherPlayer);
+                DeleteAllEnemies();
+                DeleteAllBullets();
+                DeleteAllItems();
+                InitEnemy(map);
+                InitItems(map);
                 break;
               }
               case 4: {
@@ -828,17 +867,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
             }
           }
 
-          break;
-        }
-        case sendParam::PKT_CAT::ITEM_INFO: {
-          sendParam::sendItemActive* item_info =
-              reinterpret_cast<sendParam::sendItemActive*>(lParam);
-
-          if (g_items.size() > item_info->index) {
-            g_items.at(item_info->index).disable = !item_info->is_active;
-          }
-
-          delete item_info;
           break;
         }
       }
@@ -1062,8 +1090,7 @@ void InitMap(int dst[MAP_HEIGHT][MAP_WIDTH], int src[MAP_HEIGHT][MAP_WIDTH]) {
 void InitPlayer(Player& player) {
   player.x = (MAP_WIDTH - 7) * GRID;
   player.y = (MAP_HEIGHT - 4) * GRID;
-  player.isCharging = false;
-  player.isJumping = false;
+  player.acting = 0;
   player.damaged = false;
   player.face = 0;
 }
@@ -1106,7 +1133,7 @@ void GenerateItem(int x, int y, int num) {
   Item newItem;
   newItem.x = x;
   newItem.y = y;
-  newItem.disable = true;
+  newItem.disable = false;
   g_items.push_back(newItem);
 }
 
@@ -1185,9 +1212,9 @@ void Update() {
   // 타이머스레드에서 플레이어 상태를 전송할 때, 모든 상태를 보낼 필요가
   // 없어보임
   // 2. 각 플레이어 전용 스프라이트 오프셋 두 개
-
   // 플레이어1의 스프라이트 오프셋 업데이트
-  if (g_player.isWarking) {  // 걷기 스프라이트
+  // acting 0: idle, 1: walking, 2: charging, 3: chargedfull, 4: jumping, 5: falling, 6: sliding
+  if (g_player.acting == '1') {  // 걷기 스프라이트
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
       spriteY = 24;
@@ -1195,16 +1222,19 @@ void Update() {
     }
   }
 
-  else if (g_player.isCharging) {
+  else if (g_player.acting == '2') {
     spriteX = 0;
     spriteY = 116;
     spriteHeight = 22;
-    /*if (g_player.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈 이것도 상태
-    변수로 recv받는건? bool fullcharge spriteX = 30;
-    }*/
+
+  }
+  else if (g_player.acting == '3') {
+    spriteX = 30;
+    spriteY = 116;
+    spriteHeight = 22;
   }
 
-  else if (g_player.isFalling) {
+  else if (g_player.acting == '5') {
     if ((spriteX += spriteWidth) > 119) {
       spriteX = 0;
     }
@@ -1212,7 +1242,7 @@ void Update() {
     spriteHeight = 29;
   }
 
-  else if (g_player.isJumping /*&& !g_player.isSliding*/) {
+  else if (g_player.acting == '4' /*&& !g_player.isSliding*/) {
     if ((spriteX += spriteWidth) > 59) {
       spriteX = 0;
     }
@@ -1220,7 +1250,7 @@ void Update() {
     spriteHeight = 39;
   }
 
-  else if (g_player.isSliding) {
+  else if (g_player.acting == '6') {
     if ((spriteX += spriteWidth) > 29) {
       spriteX = 0;
     }
@@ -1228,7 +1258,7 @@ void Update() {
     spriteHeight = 25;
   }
 
-  else {
+  else if(g_player.acting == '0'){
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
     }
@@ -1237,7 +1267,7 @@ void Update() {
   }
 
   // 플레이어2의 스프라이트 오프셋 업데이트
-  if (otherPlayer.isWarking) {  // 걷기 스프라이트
+  if (otherPlayer.acting == '1') {  // 걷기 스프라이트
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
       spriteY2 = 24;
@@ -1245,16 +1275,19 @@ void Update() {
     }
   }
 
-  else if (otherPlayer.isCharging) {
+  else if (otherPlayer.acting == '2') {
     spriteX2 = 0;
     spriteY2 = 116;
     spriteHeight2 = 22;
-    /*if (otherPlayer.jumpSpeed == -20) { 풀차지되면 스프라이트 바꿈
-      spriteX2 = 30;
-    }*/
   }
 
-  else if (otherPlayer.isFalling) {
+  else if (otherPlayer.acting == '3') {
+    spriteX2 = 30;
+    spriteY2 = 116;
+    spriteHeight2 = 22;
+  }
+
+  else if (otherPlayer.acting == '5') {
     if ((spriteX2 += spriteWidth) > 119) {
       spriteX2 = 0;
     }
@@ -1262,7 +1295,7 @@ void Update() {
     spriteHeight2 = 29;
   }
 
-  else if (otherPlayer.isJumping /*&& !g_player.isSliding*/) {
+  else if (otherPlayer.acting == '4' /*&& !g_player.isSliding*/) {
     if ((spriteX2 += spriteWidth) > 59) {
       spriteX2 = 0;
     }
@@ -1270,7 +1303,7 @@ void Update() {
     spriteHeight2 = 39;
   }
 
-  else if (otherPlayer.isSliding) {
+  else if (otherPlayer.acting == '6') {
     if ((spriteX2 += spriteWidth) > 29) {
       spriteX2 = 0;
     }
@@ -1278,11 +1311,58 @@ void Update() {
     spriteHeight2 = 25;
   }
 
-  else {
+  else if (otherPlayer.acting == '0'){
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
     }
     spriteY2 = 0;
     spriteHeight2 = 24;
+  }
+}
+
+void CheckItemPlayerCollisions(vector<Item>& items, const Player& player) {
+  for (auto it = items.begin(); it != items.end();) {
+    if (player.x >= it->x * GRID && player.x <= (it->x + 1) * GRID &&
+        player.y >= it->y * GRID && player.y <= (it->y + 1) * GRID) {
+        it->disable = true;
+        it->interval = 60;
+    }
+    ++it;
+  }
+}
+
+void ShootBullet() {
+  for (const auto& enemy : g_enemies) {
+    Bullet newBullet;
+    newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
+    newBullet.y = enemy.y * GRID + GRID / 2;
+    newBullet.dx = 2;
+    newBullet.dy = 0;
+    g_bullets.push_back(newBullet);
+  }
+}
+
+void MoveBullets() {
+  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
+    it->x += it->dx;
+    it->y += it->dy;
+    if (it->x < 0 || it->x > BOARD_WIDTH) {
+      it = g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void CheckPlayerBulletCollisions(vector<Bullet>& bullets, const Player& player) {
+  for (auto it = bullets.begin(); it != bullets.end();) {
+    if (it->x >= player.x - PLAYER_SIZE &&
+        it->x <= player.x + PLAYER_SIZE &&
+        it->y >= player.y - PLAYER_SIZE &&
+        it->y <= player.y + PLAYER_SIZE) {
+      it = bullets.erase(it);
+    } else {
+      ++it;
+    }
   }
 }

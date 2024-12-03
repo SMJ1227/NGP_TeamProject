@@ -2,7 +2,7 @@
 #define BUFSIZE 512
 
 #include "common.h"
-#include <windows.h>  // windows °ü·Ã ÇÔ¼ö Æ÷ÇÔ
+#include <windows.h>  // windows ê´€ë ¨ í•¨ìˆ˜ í¬í•¨
 
 #include <iostream>
 #include <vector>
@@ -21,7 +21,7 @@ typedef struct Player {
   bool isCharging = false;
   bool isJumping = false;
   bool isSliding = false;
-  bool slip = false;  // ¹Ì²ô·¯Áö´Â µ¿¾È °è¼Ó true
+  bool slip = false;  // ë¯¸ë„ëŸ¬ì§€ëŠ” ë™ì•ˆ ê³„ì† true
   bool damaged = false;
   bool face = 0;  // face: left, right
   bool EnhancedJumpPower = false;
@@ -74,7 +74,7 @@ typedef struct MATCH {
 };
 std::vector<MATCH> g_matches;
 
-// ÃÊ±âÈ­ ÇÔ¼ö
+// ì´ˆê¸°í™” í•¨ìˆ˜
 void InitMap(int matchNum, int src[MAP_HEIGHT][MAP_WIDTH]);
 void initPlayer(int matchNum);
 void initItem(int matchNum);
@@ -86,7 +86,7 @@ void DeleteAllEnemies(int matchNum);
 void ShootBullet(int matchNum);
 void DeleteAllBullets(int matchNum);
 void initAll(int matchNum);
-// ÀÌµ¿ ÇÔ¼ö
+// ì´ë™ í•¨ìˆ˜
 void updatePlayerD(int matchNum);
 void applyGravity(int matchNum);
 bool IsColliding(int matchNum, int x, int y);
@@ -95,7 +95,7 @@ bool IsSlopeGoLeftColliding(int matchNum, int x, int y);
 bool IsNextColliding(int matchNum, int x, int y);
 void movePlayer(int matchNum);
 void moveBullets(int matchNum);
-// ¿ÀºêÁ§Æ® Ãæµ¹Ã³¸®
+// ì˜¤ë¸Œì íŠ¸ ì¶©ëŒì²˜ë¦¬
 void CheckCollisions(int matchNum);
 void CheckEnemyPlayerCollisions(int matchNum);
 void CheckItemPlayerCollisions(int matchNum);
@@ -103,33 +103,33 @@ void CheckPlayerBulletCollisions(int matchNum);
 void CheckPlayersCollisions(int matchNum);
 void updateSendParam(int matchNum);
 
-// ¸ÅÄ¡¸¦ »èÁ¦ÇÏ´Â ÇÔ¼ö
+// ë§¤ì¹˜ë¥¼ ì‚­ì œí•˜ëŠ” í•¨ìˆ˜
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
-  // µğ¹ö±×¿ë Ãâ·Â
-  printf("%d¸ÅÄ¡ÀÇ %d¹ø ÇÃ·¹ÀÌ¾îÀÇ ¿¬°áÀÌ Á¾·áµÆ½À´Ï´Ù\n", matchNum, playerNum);
+  // ë””ë²„ê·¸ìš© ì¶œë ¥
+  printf("%dë§¤ì¹˜ì˜ %dë²ˆ í”Œë ˆì´ì–´ì˜ ì—°ê²°ì´ ì¢…ë£ŒëìŠµë‹ˆë‹¤\n", matchNum, playerNum);
 
   std::vector<MATCH>::iterator iter = g_matches.begin();
   for (int i = 0; i < matchNum; i++) iter++;
   g_matches.erase(std::remove(g_matches.begin(), g_matches.end(), *iter),
                   g_matches.end());
-  // µğ¹ö±×¿ë Ãâ·Â
-  printf("¸ÅÄ¡ ¿ø¼Ò »èÁ¦\n");
+  // ë””ë²„ê·¸ìš© ì¶œë ¥
+  printf("ë§¤ì¹˜ ì›ì†Œ ì‚­ì œ\n");
 
   for (int i = 0; i < g_matches.size(); i++) {
     g_matches[i].matchNum = i;
   }
 
-  // ¹Ù²Û matchNumÀ» ´Ù¸¥ ½º·¹µå¿¡µµ Àû¿ë½ÃÄÑ¾ßÇÔ
-  // -> °¢ recv½º·¹µå¿¡¼­ ¹İº¹¹®ÀÌ ½ÃÀÛµÉ ¶§ ÀÚ½ÅÀÇ ¸ÅÄ¡ ¹øÈ£¸¦ °Ë»çÇÑ´Ù
+  // ë°”ê¾¼ matchNumì„ ë‹¤ë¥¸ ìŠ¤ë ˆë“œì—ë„ ì ìš©ì‹œì¼œì•¼í•¨
+  // -> ê° recvìŠ¤ë ˆë“œì—ì„œ ë°˜ë³µë¬¸ì´ ì‹œì‘ë  ë•Œ ìì‹ ì˜ ë§¤ì¹˜ ë²ˆí˜¸ë¥¼ ê²€ì‚¬í•œë‹¤
 }
 
-// Å¬¶óÀÌ¾ğÆ®¿Í µ¥ÀÌÅÍ Åë½Å
+// í´ë¼ì´ì–¸íŠ¸ì™€ ë°ì´í„° í†µì‹ 
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
   recvParam* param = (recvParam*)arg;
   SOCKET client_sock = param->client_sock;
   char matchNum = param->matchNum;
   char playerNum = param->playerNum;
-  delete param;  // µ¿Àû ÇÒ´ç ÇØÁ¦
+  delete param;  // ë™ì  í• ë‹¹ í•´ì œ
 
   int retval;
   struct sockaddr_in clientaddr;
@@ -137,33 +137,33 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   int addrlen;
   char buf[BUFSIZE + 1];
 
-  // Å¬¶óÀÌ¾ğÆ® Á¤º¸ ¾ò±â
+  // í´ë¼ì´ì–¸íŠ¸ ì •ë³´ ì–»ê¸°
   addrlen = sizeof(clientaddr);
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  printf("\n[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¢¼Ó: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr,
+  printf("\n[TCP server] client connect: IP address=%s, port number=%d\n", addr,
          ntohs(clientaddr.sin_port));
 
   while (1) {
-    // ´Ù¸¥ ½º·¹µå ÀÛµ¿Áß ´ë±â
+    // ë‹¤ë¥¸ ìŠ¤ë ˆë“œ ì‘ë™ì¤‘ ëŒ€ê¸°
     WaitForSingleObject(hEvent, INFINITE);
     ResetEvent(hEvent);
-    // º¤ÅÍÀÇ À¯È¿ÇÑ ¹üÀ§ ³»¿¡¼­, ÇöÀç ¸ÅÄ¡ÀÇ ¹øÈ£¿Í, ¸ÅÄ¡[ÇöÀç ¸ÅÄ¡¹øÈ£]ÀÇ ¸ÅÄ¡
-    // ¹øÈ£°¡ ÀÏÄ¡ÇÏ´ÂÁö ºñ±³ÇÑ´Ù, ´Ù¸£´Ù¸é °¨¼Ò
+    // ë²¡í„°ì˜ ìœ íš¨í•œ ë²”ìœ„ ë‚´ì—ì„œ, í˜„ì¬ ë§¤ì¹˜ì˜ ë²ˆí˜¸ì™€, ë§¤ì¹˜[í˜„ì¬ ë§¤ì¹˜ë²ˆí˜¸]ì˜ ë§¤ì¹˜
+    // ë²ˆí˜¸ê°€ ì¼ì¹˜í•˜ëŠ”ì§€ ë¹„êµí•œë‹¤, ë‹¤ë¥´ë‹¤ë©´ ê°ì†Œ
 
     while (matchNum >= 0 && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
-      // µğ¹ö±×¿Ë Ãâ·Â
+      // ë””ë²„ê·¸ì˜¹ ì¶œë ¥
       printf(
-          "matchNum: %d\n matchNum¹øÂ° ¸ÅÄ¡ÀÇ ½ÇÁ¦ ¸ÅÄ¡ ¹øÈ£: %d\nÀÏÄ¡ÇÏÁö "
-          "¾ÊÀ½, matchNum°¨¼Ò\n",
+          "matchNum: %d\n matchNumë²ˆì§¸ ë§¤ì¹˜ì˜ ì‹¤ì œ ë§¤ì¹˜ ë²ˆí˜¸: %d\nì¼ì¹˜í•˜ì§€ "
+          "ì•ŠìŒ, matchNumê°ì†Œ\n",
           matchNum, g_matches[matchNum].matchNum);
       matchNum--;
     }
-    // µğ¹ö±×¿ë Ãâ·Â
-    // printf("\nrecvThread ·çÇÁ ½ÃÀÛ, matchNum: %d, playerNum: %d\n", matchNum,
-    // playerNum); µ¥ÀÌÅÍ ¹Ş±â
+    // ë””ë²„ê·¸ìš© ì¶œë ¥
+    // printf("\nrecvThread ë£¨í”„ ì‹œì‘, matchNum: %d, playerNum: %d\n", matchNum,
+    // playerNum); ë°ì´í„° ë°›ê¸°
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
@@ -175,14 +175,31 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       break;
     }
 
-    // ¹ŞÀº µ¥ÀÌÅÍ Ãâ·Â
+    // ë°›ì€ ë°ì´í„° ì¶œë ¥
     buf[retval] = '\0';
+    char input0 = buf[0];
+    char input1 = buf[1];
+    std::println("{}match player{} recv data: {:?}, {:?}", matchNum,
+                 playerNum, buf[0], buf[1]);
     if (playerNum == 0) {
-      g_matches[matchNum].p1 = buf[0];
-
-      std::println("{}¸ÅÄ¡ {}ÇÃ·¹ÀÌ¾î¿¡°Ô ¹ŞÀº µ¥ÀÌÅÍ: {:?}", matchNum, playerNum, buf[0]);    // ¿ŞÂÊ 0, ¿À¸¥ÂÊ 1, ½ºÆäÀÌ½º ÀÔ·Â¶§ ÇÑ¹ø, ¶ª¶§ ÇÑ¹ø
+      if (buf[1] == '\0') { // í•˜ë‚˜ì˜ ê°’ë§Œ ë“¤ì–´ì˜´
+        if (!g_matches[matchNum].player1.isCharging) {
+          g_matches[matchNum].p1 = input0;
+        } 
+        else {
+          if (input0 == ' ') {
+            g_matches[matchNum].p1 = input0;
+          } 
+          else if (input0 == '\b') {
+            g_matches[matchNum].p1 = input0;
+          }
+        }
+      } 
+      else {
+        g_matches[matchNum].p1 = input1;
+      }
     }
-    if (playerNum == 1) {
+    else if (playerNum == 1) {
       g_matches[matchNum].p2 = buf[0];
       printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
              g_matches[matchNum].p2);
@@ -193,119 +210,113 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       SetEvent(hEvent);
       break;
     }
-    // ÀÌº¥Æ® ÇØÁ¦
+    // ì´ë²¤íŠ¸ í•´ì œ
     SetEvent(hEvent);
   }
-  // ¼ÒÄÏ ´İ±â
+  // ì†Œì¼“ ë‹«ê¸°
   closesocket(client_sock);
-  printf("[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¾·á: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr,
+  printf("[TCP server] client quit: IP address=%s, port number=%d\n", addr,
          ntohs(clientaddr.sin_port));
   return 0;
 }
 
 DWORD WINAPI timerProcessClient(LPVOID lpParam) {
-  // Å¸ÀÌ¸Ó »ı¼º
+  // íƒ€ì´ë¨¸ ìƒì„±
   int matchNum = (*(int*)lpParam);
   delete (int*)lpParam;
   HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
   if (hTimer == NULL) {
-    printf("Å¸ÀÌ¸Ó »ı¼º ½ÇÆĞ\n");
+    printf("íƒ€ì´ë¨¸ ìƒì„± ì‹¤íŒ¨\n");
     return 1;
   }
 
-  // Å¸ÀÌ¸Ó °£°İÀ» ¼³Á¤ (1/30ÃÊ)
-  LARGE_INTEGER liDueTime;  // LARGE_INTEGER´Â SetWaitableTimer¿¡¼­ ¿ä±¸ÇÔ
-  liDueTime.QuadPart = -333300;
+  // íƒ€ì´ë¨¸ ê°„ê²©ì„ ì„¤ì • (1/30ì´ˆ)
+  LARGE_INTEGER liDueTime;  // LARGE_INTEGERëŠ” SetWaitableTimerì—ì„œ ìš”êµ¬í•¨
+  liDueTime.QuadPart = -160000;
 
   while (true) {
-    // Å¸ÀÌ¸Ó ¼³Á¤
+    // íƒ€ì´ë¨¸ ì„¤ì •
     if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
-      printf("Å¸ÀÌ¸Ó ¼³Á¤ ½ÇÆĞ\n");
+      printf("íƒ€ì´ë¨¸ ì„¤ì • ì‹¤íŒ¨\n");
       CloseHandle(hTimer);
       SetEvent(hEvent);
       return 1;
     }
 
-    // Å¸ÀÌ¸Ó ´ë±â ½ÃÀÛ
-    // printf("Å¸ÀÌ¸Ó ´ë±â ½ÃÀÛ\n");
+    // íƒ€ì´ë¨¸ ëŒ€ê¸° ì‹œì‘
+    // printf("íƒ€ì´ë¨¸ ëŒ€ê¸° ì‹œì‘\n");
     DWORD waitResult = WaitForSingleObject(hTimer, INFINITE);
     if (waitResult != WAIT_OBJECT_0) {
-      printf("Å¸ÀÌ¸Ó ´ë±â ½ÇÆĞ ¶Ç´Â Áß´Ü: %d\n", GetLastError());
+      printf("íƒ€ì´ë¨¸ ëŒ€ê¸° ì‹¤íŒ¨ ë˜ëŠ” ì¤‘ë‹¨: %d\n", GetLastError());
       break;
     }
-    // printf("Å¸ÀÌ¸Ó ´ë±â ¿Ï·á\n");
+    // printf("íƒ€ì´ë¨¸ ëŒ€ê¸° ì™„ë£Œ\n");
 
-    //// ÀÌº¥Æ® ´ë±â
+    //// ì´ë²¤íŠ¸ ëŒ€ê¸°
     // WaitForSingleObject(hEvent, INFINITE);
     // ResetEvent(hEvent);
 
-    // º¤ÅÍÀÇ À¯È¿ÇÑ ¹üÀ§ ³»¿¡¼­, ÇöÀç ¸ÅÄ¡ ¹øÈ£¿Í, ¸ÅÄ¡[ÇöÀç ¸ÅÄ¡¹øÈ£]ÀÇ ¸ÅÄ¡
-    // ¹øÈ£°¡ ÀÏÄ¡ÇÏ´Â Áö ºñ±³ÇÑ´Ù, ´Ù¸£´Ù¸é °¨¼Ò
+    // ë²¡í„°ì˜ ìœ íš¨í•œ ë²”ìœ„ ë‚´ì—ì„œ, í˜„ì¬ ë§¤ì¹˜ ë²ˆí˜¸ì™€, ë§¤ì¹˜[í˜„ì¬ ë§¤ì¹˜ë²ˆí˜¸]ì˜ ë§¤ì¹˜
+    // ë²ˆí˜¸ê°€ ì¼ì¹˜í•˜ëŠ” ì§€ ë¹„êµí•œë‹¤, ë‹¤ë¥´ë‹¤ë©´ ê°ì†Œ
     while (!(matchNum < 0) && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
-      // µğ¹ö±×¿ë Ãâ·Â
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
       printf(
-          "matchNum: %d\n matchNum¹øÂ° ¸ÅÄ¡ÀÇ ½ÇÁ¦ ¸ÅÄ¡ ¹øÈ£: %d\nÀÏÄ¡ÇÏÁö "
-          "¾ÊÀ½, matchNum°¨¼Ò\n",
+          "matchNum: %d\n matchNumë²ˆì§¸ ë§¤ì¹˜ì˜ ì‹¤ì œ ë§¤ì¹˜ ë²ˆí˜¸: %d\nì¼ì¹˜í•˜ì§€ "
+          "ì•ŠìŒ, matchNumê°ì†Œ\n",
           matchNum, g_matches[matchNum].matchNum);
       matchNum--;
     }
 
     EnterCriticalSection(&cs);
-    // ÇÃ·¹ÀÌ¾î dx dy º¯È­
+    // í”Œë ˆì´ì–´ dx dy ë³€í™”
     updatePlayerD(matchNum);
-    // printf("%d, %d\n", g_matches[matchNum].player1.dx,
-    // g_matches[matchNum].player1.dy);
     applyGravity(matchNum);
     movePlayer(matchNum);
     // moveBullets();
     // shootInterval++
-    // ¾ÆÀÌÅÛ Àç»ı¼º ÄÚµå
-    // ÃÑ¾Ë Àç»ı¼º ÄÚµå
-    // Æ÷Å» Ãæµ¹Ã³¸®
-    // ¿ÀºêÁ§Æ® Ãæµ¹Ã³¸®
-    // sendParam¾÷µ¥ÀÌÆ®
-    // printf("match %d: %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
-    // g_matches[matchNum].SPlayer1.y);
+    // ì•„ì´í…œ ì¬ìƒì„± ì½”ë“œ
+    // ì´ì•Œ ì¬ìƒì„± ì½”ë“œ
+    // í¬íƒˆ ì¶©ëŒì²˜ë¦¬
+    // ì˜¤ë¸Œì íŠ¸ ì¶©ëŒì²˜ë¦¬
+    // sendParamì—…ë°ì´íŠ¸
     updateSendParam(matchNum);
-    //printf("match %d: %d, %d, %d\r", matchNum, g_matches[matchNum].SPlayer1.x,
-    //       g_matches[matchNum].SPlayer1.y, g_matches[matchNum].SPlayer1.face);
     LeaveCriticalSection(&cs);
-    // send ºÎºĞ
+    // send ë¶€ë¶„
     char sendBuf[1 + BUFSIZE];
     int sendSize = 1 + sizeof(sendParam::sendParam);
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
-        // printf("Å¬¶óÀÌ¾ğÆ® %d ¼ÒÄÏÀÌ NULLÀÔ´Ï´Ù.\n", i);
+        // printf("í´ë¼ì´ì–¸íŠ¸ %d ì†Œì¼“ì´ NULLì…ë‹ˆë‹¤.\n", i);
         continue;
       }
-      // printf("Å¬¶óÀÌ¾ğÆ® %d ¼ÒÄÏ È®ÀÎ: %d\n", i,
+      // printf("í´ë¼ì´ì–¸íŠ¸ %d ì†Œì¼“ í™•ì¸: %d\n", i,
       // g_matches[matchNum].client_sock[i]);
       if (i == 0) {
         sendBuf[0] = static_cast<std::int8_t>(
-            sendParam::PKT_CAT::PLAYER_INFO);  // ÆĞÅ¶ Å¸ÀÔ ¼³Á¤
+            sendParam::PKT_CAT::PLAYER_INFO);  // íŒ¨í‚· íƒ€ì… ì„¤ì •
         memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer1,
-               sizeof(sendParam::sendParam));  // µ¥ÀÌÅÍ º¹»ç
+               sizeof(sendParam::sendParam));  // ë°ì´í„° ë³µì‚¬
       } else if (i == 1) {
         sendBuf[0] = static_cast<std::int8_t>(
-            sendParam::PKT_CAT::PLAYER_INFO);  // ÆĞÅ¶ Å¸ÀÔ ¼³Á¤
+            sendParam::PKT_CAT::PLAYER_INFO);  // íŒ¨í‚· íƒ€ì… ì„¤ì •
         memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer2,
-               sizeof(sendParam::sendParam));  // µ¥ÀÌÅÍ º¹»ç
+               sizeof(sendParam::sendParam));  // ë°ì´í„° ë³µì‚¬
       }
       int retval =
           send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
       if (retval == SOCKET_ERROR) {
-        printf("Å¬¶óÀÌ¾ğÆ® %d¿¡°Ô µ¥ÀÌÅÍ Àü¼Û ½ÇÆĞ: %d\n", i,
+        printf("í´ë¼ì´ì–¸íŠ¸ %dì—ê²Œ ë°ì´í„° ì „ì†¡ ì‹¤íŒ¨: %d\n", i,
                WSAGetLastError());
       } else {
-        // printf("Å¬¶óÀÌ¾ğÆ® %d¿¡°Ô µ¥ÀÌÅÍ Àü¼Û ¼º°ø: %d ¹ÙÀÌÆ® Àü¼ÛµÊ\n", i,
+        // printf("í´ë¼ì´ì–¸íŠ¸ %dì—ê²Œ ë°ì´í„° ì „ì†¡ ì„±ê³µ: %d ë°”ì´íŠ¸ ì „ì†¡ë¨\n", i,
         // retval);
       }
     }
-    // ÀÌº¥Æ® ÇØÁ¦
+    // ì´ë²¤íŠ¸ í•´ì œ
     SetEvent(hEvent);
-    // ÇÊ¿ä¿¡ µû¶ó Å¸ÀÌ¸Ó Áß´Ü Á¶°ÇÀ» Ãß°¡.
+    // í•„ìš”ì— ë”°ë¼ íƒ€ì´ë¨¸ ì¤‘ë‹¨ ì¡°ê±´ì„ ì¶”ê°€.
   }
 
   CloseHandle(hTimer);
@@ -315,11 +326,11 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
 int main(int argc, char* argv[]) {
   int retval;
 
-  // À©¼Ó ÃÊ±âÈ­
+  // ìœˆì† ì´ˆê¸°í™”
   WSADATA wsa;
   if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 1;
 
-  // ¼ÒÄÏ »ı¼º
+  // ì†Œì¼“ ìƒì„±
   SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_sock == INVALID_SOCKET) err_quit("socket()");
 
@@ -340,7 +351,7 @@ int main(int argc, char* argv[]) {
   retval = listen(listen_sock, SOMAXCONN);
   if (retval == SOCKET_ERROR) err_quit("listen()");
 
-  // µ¥ÀÌÅÍ Åë½Å¿¡ »ç¿ëÇÒ º¯¼ö
+  // ë°ì´í„° í†µì‹ ì— ì‚¬ìš©í•  ë³€ìˆ˜
   struct sockaddr_in clientaddr;
   int addrlen;
   HANDLE hThread;
@@ -349,9 +360,9 @@ int main(int argc, char* argv[]) {
   InitializeCriticalSection(&cs);
 
   while (1) {
-    printf("¼­¹ö ´ë±âÁß...\n");
+    printf("ì„œë²„ ëŒ€ê¸°ì¤‘...\n");
     addrlen = sizeof(clientaddr);
-    // ¿©±â¼­ rParam ÇÒ´ç ÇØ¼­ »ı¼º ÇÏ°í rParam°ª ÁÖ°í
+    // ì—¬ê¸°ì„œ rParam í• ë‹¹ í•´ì„œ ìƒì„± í•˜ê³  rParamê°’ ì£¼ê³ 
     rParam = new recvParam{};
     matchNumParam = new int{};
     rParam->client_sock =
@@ -360,61 +371,61 @@ int main(int argc, char* argv[]) {
       err_display("accept()");
       break;
     }
-    // ¸ÅÄ¡ »ı¼º Á¶°Ç - ÇöÀç ¸ÅÄ¡°¡ ¾ø°Å³ª(0), ¸¶Áö¸· ¸ÅÄ¡ÀÇ player°¡ ´Ù
-    // Â÷ÀÖÀ¸¸é »ı¼º ÇÃ·¹ÀÌ¾î 1 »ı¼º Á¶°Ç: ¸¶Áö¸· ¸ÅÄ¡ÀÇ ¼ÒÄÏ0¹øÀÌ ºñ¾úÀ¸¸é »ı¼º
-    // ÇÃ·¹ÀÌ¾î 2 »ı¼º Á¶°Ç: ¸¶Áö¸· ¸ÅÄ¡ÀÇ ¼ÒÄÏ1ÀÌ Â÷ÀÖ°í ¼ÒÄÏ2°¡ ºñ¾úÀ¸¸é »ı¼º
-    // Å¸ÀÌ¸Ó »ı¼º Á¶°Ç: ÇÃ·¹ÀÌ¾î 1 »ı¼ºÇÒ ¶§
+    // ë§¤ì¹˜ ìƒì„± ì¡°ê±´ - í˜„ì¬ ë§¤ì¹˜ê°€ ì—†ê±°ë‚˜(0), ë§ˆì§€ë§‰ ë§¤ì¹˜ì˜ playerê°€ ë‹¤
+    // ì°¨ìˆìœ¼ë©´ ìƒì„± í”Œë ˆì´ì–´ 1 ìƒì„± ì¡°ê±´: ë§ˆì§€ë§‰ ë§¤ì¹˜ì˜ ì†Œì¼“0ë²ˆì´ ë¹„ì—ˆìœ¼ë©´ ìƒì„±
+    // í”Œë ˆì´ì–´ 2 ìƒì„± ì¡°ê±´: ë§ˆì§€ë§‰ ë§¤ì¹˜ì˜ ì†Œì¼“1ì´ ì°¨ìˆê³  ì†Œì¼“2ê°€ ë¹„ì—ˆìœ¼ë©´ ìƒì„±
+    // íƒ€ì´ë¨¸ ìƒì„± ì¡°ê±´: í”Œë ˆì´ì–´ 1 ìƒì„±í•  ë•Œ
     char addr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
-    /*printf("\n[TCP ¼­¹ö] Å¬¶óÀÌ¾ğÆ® Á¢¼Ó: IP ÁÖ¼Ò=%s, Æ÷Æ® ¹øÈ£=%d\n", addr,
+    /*printf("\n[TCP ì„œë²„] í´ë¼ì´ì–¸íŠ¸ ì ‘ì†: IP ì£¼ì†Œ=%s, í¬íŠ¸ ë²ˆí˜¸=%d\n", addr,
            ntohs(clientaddr.sin_port));*/
-    // ¸ÅÄ¡ »ı¼º
+    // ë§¤ì¹˜ ìƒì„±
     if (g_matches.size() == 0 ||
         (!g_matches.empty() && g_matches.back().client_sock[0] != NULL &&
          g_matches.back().client_sock[1] != NULL))
       g_matches.push_back(MATCH());
-    // ÇÃ·¹ÀÌ¾î1 ½º·¹µå, Å¸ÀÌ¸Ó ½º·¹µå »ı¼º
+    // í”Œë ˆì´ì–´1 ìŠ¤ë ˆë“œ, íƒ€ì´ë¨¸ ìŠ¤ë ˆë“œ ìƒì„±
     if (g_matches.back().client_sock[0] == NULL) {
       rParam->playerNum = 0;
       rParam->matchNum = g_matches.size() - 1;
       *matchNumParam = g_matches.size() - 1;
-      // g_matchesÀÇ Å¬¶óÀÌ¾ğÆ® ¼ÒÄÏ, ¸ÅÄ¡ ³Ñ¹ö ¾÷µ¥ÀÌÆ®
+      // g_matchesì˜ í´ë¼ì´ì–¸íŠ¸ ì†Œì¼“, ë§¤ì¹˜ ë„˜ë²„ ì—…ë°ì´íŠ¸
       g_matches.back().client_sock[0] = rParam->client_sock;
       g_matches.back().matchNum = g_matches.size() - 1;
       initAll(*matchNumParam);
-      // ¼ö½Å ½º·¹µå »ı¼º
+      // ìˆ˜ì‹  ìŠ¤ë ˆë“œ ìƒì„±
       g_matches.back().recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
-      // µğ¹ö±×¿ë Ãâ·Â
-      printf("%zu¹ø ¸ÅÄ¡ ´ë±âÁß.. Å¬¶óÀÌ¾ğÆ® ¼ö: %d\n", g_matches.size() - 1,
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
+      printf("%zuë²ˆ ë§¤ì¹˜ ëŒ€ê¸°ì¤‘.. í´ë¼ì´ì–¸íŠ¸ ìˆ˜: %d\n", g_matches.size() - 1,
              1);
-      // Å¸ÀÌ¸Ó ½º·¹µå »ı¼º
+      // íƒ€ì´ë¨¸ ìŠ¤ë ˆë“œ ìƒì„±
       g_matches.back().timerThread =
           CreateThread(NULL, 0, timerProcessClient, matchNumParam, 0, NULL);
     }
-    // ÇÃ·¹ÀÌ¾î2 ½º·¹µå »ı¼º
+    // í”Œë ˆì´ì–´2 ìŠ¤ë ˆë“œ ìƒì„±
 
     else if (g_matches.back().client_sock[0] != NULL &&
              g_matches.back().client_sock[1] == NULL) {
-      printf("2¹ø ¹İº¹¹® ÁøÀÔ\n");
+      printf("2ë²ˆ ë°˜ë³µë¬¸ ì§„ì…\n");
       rParam->playerNum = 1;
       rParam->matchNum = g_matches.size() - 1;
       g_matches.back().client_sock[1] = rParam->client_sock;
-      // µğ¹ö±×¿ë Ãâ·Â
-      printf("%d¹øÂ° ¸ÅÄ¡ %d¹øÂ° ÇÃ·¹ÀÌ¾î ½º·¹µå »ı¼º\n", rParam->matchNum,
+      // ë””ë²„ê·¸ìš© ì¶œë ¥
+      printf("%dë²ˆì§¸ ë§¤ì¹˜ %dë²ˆì§¸ í”Œë ˆì´ì–´ ìŠ¤ë ˆë“œ ìƒì„±\n", rParam->matchNum,
              rParam->playerNum);
       g_matches.back().recvThread[1] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       initPlayer(*matchNumParam);
     }
-    // ÀÌº¥Æ® ÇØÁ¦
+    // ì´ë²¤íŠ¸ í•´ì œ
     SetEvent(hEvent);
   }
 
-  // ¼ÒÄÏ ´İ±â
+  // ì†Œì¼“ ë‹«ê¸°
   closesocket(listen_sock);
   DeleteCriticalSection(&cs);
-  // À©¼Ó Á¾·á
+  // ìœˆì† ì¢…ë£Œ
   WSACleanup();
   return 0;
 }
@@ -435,7 +446,7 @@ void initPlayer(int matchNum) {
   g_matches[matchNum].player2.y = (MAP_HEIGHT - 4) * GRID;
 }
 
-// ¾ÆÀÌÅÛ
+// ì•„ì´í…œ
 void initItem(int matchNum) {
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
@@ -460,7 +471,7 @@ void DeleteAllItems(int matchNum) { g_matches[matchNum].g_items.clear(); }
 void initEnemy(int matchNum) {
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
-      if (g_matches[matchNum].map[y][x] == 4) {  // Àû
+      if (g_matches[matchNum].map[y][x] == 4) {  // ì 
         GenerateEnemy(matchNum, x, y);
       }
     }
@@ -479,7 +490,7 @@ void DeleteAllEnemies(int matchNum) { g_matches[matchNum].g_enemies.clear(); }
 void ShootBullet(int matchNum) {
   for (const auto& enemy : g_matches[matchNum].g_enemies) {
     Bullet newBullet;
-    newBullet.x = (enemy.x + 1) * GRID;  // ÀûÀÇ À§Ä¡¿¡¼­ ÃÑ¾ËÀÌ ³ª°¡µµ·Ï ¼³Á¤
+    newBullet.x = (enemy.x + 1) * GRID;  // ì ì˜ ìœ„ì¹˜ì—ì„œ ì´ì•Œì´ ë‚˜ê°€ë„ë¡ ì„¤ì •
     newBullet.y = enemy.y * GRID + GRID / 2;
     newBullet.dx = 2;
     newBullet.dy = 0;
@@ -490,15 +501,14 @@ void ShootBullet(int matchNum) {
 void DeleteAllBullets(int matchNum) { g_matches[matchNum].g_bullets.clear(); }
 
 void initAll(int matchNum) {
-  InitMap(matchNum, map1);
+  InitMap(matchNum, map0);
   initPlayer(matchNum);
   initItem(matchNum);
   initEnemy(matchNum);
 }
 
-void updatePlayerD(
-    int matchNum) {  // a·Î ¹Ù²ã¹ö¸®±â¶§¹®¿¡ ÇÑ¹ø¸¸ dx¿¬»êÀÌ ÀÌ·ç¾îÁø´Ù.
-  // player1 Ã³¸®
+void updatePlayerD(int matchNum) {
+  // player1 ì²˜ë¦¬
   if (g_matches[matchNum].p1 == '0') {
     if (g_matches[matchNum].player1.dx >= -3) {
       g_matches[matchNum].player1.dx -= 1;
@@ -512,30 +522,30 @@ void updatePlayerD(
     }
   } 
   else if (g_matches[matchNum].p1 == 'a') {
-    // ¿ŞÂÊ, ¿À¸¥ÂÊ Å°°¡ ¸ğµÎ ´­¸®Áö ¾ÊÀº »óÅÂ
+    // ì™¼ìª½, ì˜¤ë¥¸ìª½ í‚¤ê°€ ëª¨ë‘ ëˆŒë¦¬ì§€ ì•Šì€ ìƒíƒœ
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;
     } else if (g_matches[matchNum].player1.dx < 0) {
       g_matches[matchNum].player1.dx += 1;
     }
   } 
-  else if (g_matches[matchNum].p1 != ' ') {  // Á¡ÇÁ Â÷Â¡
+  else if (g_matches[matchNum].p1 == ' ') {  // ì í”„ ì°¨ì§•
     g_matches[matchNum].player1.spaceKeyReleased = false;
-    if (g_matches[matchNum].player1.isJumping &&
+    if (!g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
       if (g_matches[matchNum].player1.damaged) {
         g_matches[matchNum].player1.damaged = false;
       }
       g_matches[matchNum].player1.isCharging = true;
       g_matches[matchNum].player1.dx = 0;
-      g_matches[matchNum].player1.jumpSpeed -= 1;
+      g_matches[matchNum].player1.jumpSpeed -= 2;
       if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
         g_matches[matchNum].player1.jumpSpeed = -20;
       }
     }
   } 
-  else if (g_matches[matchNum].p1 != '\b') {  // Á¡ÇÁ ¶Ù±â
-    if (g_matches[matchNum].player1.spaceKeyReleased &&
+  else if (g_matches[matchNum].p1 == '\b') {  // ì í”„ ë›°ê¸°
+    if (!g_matches[matchNum].player1.spaceKeyReleased &&
         g_matches[matchNum].player1.isCharging) {
       g_matches[matchNum].player1.dy = g_matches[matchNum].player1.jumpSpeed;
       g_matches[matchNum].player1.jumpSpeed = 0;
@@ -546,35 +556,28 @@ void updatePlayerD(
       }
       g_matches[matchNum].player1.spaceKeyReleased = true;
     }
+  } 
+  else if (g_matches[matchNum].p1 == 'a') {
+    // ì™¼ìª½, ì˜¤ë¥¸ìª½ í‚¤ê°€ ëª¨ë‘ ëˆŒë¦¬ì§€ ì•Šì€ ìƒíƒœ
+    if (g_matches[matchNum].player1.dx > 0) {
+      g_matches[matchNum].player1.dx -= 1;
+    } else if (g_matches[matchNum].player1.dx < 0) {
+      g_matches[matchNum].player1.dx += 1;
+    }
+  } 
+  if (g_matches[matchNum].p1 != ' ') {
+    g_matches[matchNum].p1 = 'a';
   }
-  g_matches[matchNum].p1 = 'a';
 
-  // player2 Ã³¸®
-  if (g_matches[matchNum].p2 == 0) {
-    if (g_matches[matchNum].player2.dx >= -3) {
-      g_matches[matchNum].player2.dx -= 1;
-    }
-  } else if (g_matches[matchNum].p2 == 1) {
-    if (g_matches[matchNum].player2.dx <= 3) {
-      g_matches[matchNum].player2.dx += 1;
-    }
-  } else if (g_matches[matchNum].p2 != 0 && g_matches[matchNum].p2 != 1) {
-    // ¿ŞÂÊ, ¿À¸¥ÂÊ Å°°¡ ¸ğµÎ ´­¸®Áö ¾ÊÀº »óÅÂ
-    if (g_matches[matchNum].player2.dx > 0) {
-      g_matches[matchNum].player2.dx -= 1;
-    } else if (g_matches[matchNum].player2.dx < 0) {
-      g_matches[matchNum].player2.dx += 1;
-    }
-  }
-  g_matches[matchNum].p2 = 'a';
+  // player2 ì²˜ë¦¬
 }
 
 void applyGravity(int matchNum) {
   if (g_matches[matchNum].player1.dy < 20) {
-    g_matches[matchNum].player1.dy += GRAVITY;  // Áß·Â Àû¿ë
+    g_matches[matchNum].player1.dy += GRAVITY;
   }
   if (g_matches[matchNum].player2.dy < 20) {
-    g_matches[matchNum].player2.dy += GRAVITY;  // Áß·Â Àû¿ë
+    g_matches[matchNum].player2.dy += GRAVITY;
   }
 }
 
@@ -600,7 +603,7 @@ bool IsSlopeGoRightColliding(int matchNum, int x, int y) {
   int topY = (y - PLAYER_SIZE / 2) / GRID;
   int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
 
-  // Ãæµ¹ °¨Áö
+  // ì¶©ëŒ ê°ì§€
   if (g_matches[matchNum].map[bottomY][leftX] == 2 ||
       g_matches[matchNum].map[bottomY][rightX] == 2) {
     return true;
@@ -619,7 +622,7 @@ bool IsSlopeGoLeftColliding(int matchNum, int x, int y) {
   int topY = (y - PLAYER_SIZE / 2) / GRID;
   int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
 
-  // Ãæµ¹ °¨Áö
+  // ì¶©ëŒ ê°ì§€
   if (g_matches[matchNum].map[bottomY][leftX] == 3 ||
       g_matches[matchNum].map[bottomY][rightX] == 3) {
     return true;
@@ -656,37 +659,37 @@ void movePlayer(int matchNum) {
   bool isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
       matchNum, g_matches[matchNum].player1.x, g_matches[matchNum].player1.y);
 
-  // ¼öÁ÷ Ãæµ¹ Ã³¸®
+  // ìˆ˜ì§ ì¶©ëŒ ì²˜ë¦¬
   if (!isVerticalCollision) {
     g_matches[matchNum].player1.y = newY;
     if (!g_matches[matchNum].player1.EnhancedJumpPower) {
       g_matches[matchNum].player1.isJumping = true;
     }
   } else {
-    // ¹Ù´Ú Ãæµ¹ ½Ã yÃà À§Ä¡ º¸Á¤
+    // ë°”ë‹¥ ì¶©ëŒ ì‹œ yì¶• ìœ„ì¹˜ ë³´ì •
     if (g_matches[matchNum].player1.dy > 0) {
       if (!IsColliding(matchNum, g_matches[matchNum].player1.x,
                        g_matches[matchNum].player1.y + 1)) {
         g_matches[matchNum].player1.y += 1;
       }
     }
-    g_matches[matchNum].player1.dy = 0;  // Ãæµ¹ ÈÄ yÃà ¼Óµµ ÃÊ±âÈ­
+    g_matches[matchNum].player1.dy = 0;  // ì¶©ëŒ í›„ yì¶• ì†ë„ ì´ˆê¸°í™”
     g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = false;
   }
 
-  // ¼öÆò Ãæµ¹ Ã³¸®
+  // ìˆ˜í‰ ì¶©ëŒ ì²˜ë¦¬
   if (!isHorizontalCollision) {
     g_matches[matchNum].player1.x = newX;
   } else {
-    g_matches[matchNum].player1.dx = 0;  // Ãæµ¹ ÈÄ xÃà ¼Óµµ ÃÊ±âÈ­
+    g_matches[matchNum].player1.dx = 0;  // ì¶©ëŒ í›„ xì¶• ì†ë„ ì´ˆê¸°í™”
   }
 
   if (isSlopeGoRightCollision) {
     g_matches[matchNum].player1.isSliding = true;
 
-    g_matches[matchNum].player1.dy = 1;  // °æ»ç¸é À§¿¡¼­ ¹Ì²ô·¯Áü ¼Óµµ
-    g_matches[matchNum].player1.dx = 3;  // ¿À¸¥ÂÊ ¾Æ·¡·Î ¹Ì²ô·¯Áü
+    g_matches[matchNum].player1.dy = 1;  // ê²½ì‚¬ë©´ ìœ„ì—ì„œ ë¯¸ë„ëŸ¬ì§ ì†ë„
+    g_matches[matchNum].player1.dx = 3;  // ì˜¤ë¥¸ìª½ ì•„ë˜ë¡œ ë¯¸ë„ëŸ¬ì§
     newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
     newY = g_matches[matchNum].player1.y + g_matches[matchNum].player1.dy;
     g_matches[matchNum].player1.x = newX;
@@ -696,8 +699,8 @@ void movePlayer(int matchNum) {
   if (isSlopeGoLeftCollision) {
     g_matches[matchNum].player1.isSliding = true;
 
-    g_matches[matchNum].player1.dy = 1;  // °æ»ç¸é À§¿¡¼­ ¹Ì²ô·¯Áü ¼Óµµ
-    g_matches[matchNum].player1.dx = -3;  // ¿À¸¥ÂÊ ¾Æ·¡·Î ¹Ì²ô·¯Áü
+    g_matches[matchNum].player1.dy = 1;  // ê²½ì‚¬ë©´ ìœ„ì—ì„œ ë¯¸ë„ëŸ¬ì§ ì†ë„
+    g_matches[matchNum].player1.dx = -3;  // ì˜¤ë¥¸ìª½ ì•„ë˜ë¡œ ë¯¸ë„ëŸ¬ì§
     newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
     newY = g_matches[matchNum].player1.y + g_matches[matchNum].player1.dy;
     g_matches[matchNum].player1.x = newX;
@@ -735,9 +738,9 @@ void CheckEnemyPlayerCollisions(int matchNum) {
       g_matches[matchNum].player1.dx = 4;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
-      ++it;  // Ãæµ¹ ½Ã ¹İº¹ÀÚ¸¦ Áõ°¡½ÃÅµ´Ï´Ù.
+      ++it;  // ì¶©ëŒ ì‹œ ë°˜ë³µìë¥¼ ì¦ê°€ì‹œí‚µë‹ˆë‹¤.
     } else {
-      ++it;  // Ãæµ¹ÀÌ ¹ß»ıÇÏÁö ¾Ê¾ÒÀ» ¶§µµ ¹İº¹ÀÚ¸¦ Áõ°¡½ÃÅµ´Ï´Ù.
+      ++it;  // ì¶©ëŒì´ ë°œìƒí•˜ì§€ ì•Šì•˜ì„ ë•Œë„ ë°˜ë³µìë¥¼ ì¦ê°€ì‹œí‚µë‹ˆë‹¤.
     }
   }
 }
@@ -765,12 +768,12 @@ void CheckPlayerBulletCollisions(int matchNum) {
         it->x <= g_matches[matchNum].player1.x + PLAYER_SIZE &&
         it->y >= g_matches[matchNum].player1.y - PLAYER_SIZE &&
         it->y <= g_matches[matchNum].player1.y + PLAYER_SIZE) {
-      // ÇÃ·¹ÀÌ¾î¸¦ µÚ·Î ¹ĞÄ§
+      // í”Œë ˆì´ì–´ë¥¼ ë’¤ë¡œ ë°€ì¹¨
       g_matches[matchNum].player1.dx = it->dx * 2;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
       g_matches[matchNum].player1.damaged = true;
-      // ÇÃ·¹ÀÌ¾î¿Í Ãæµ¹ ½Ã Á¦°Å
+      // í”Œë ˆì´ì–´ì™€ ì¶©ëŒ ì‹œ ì œê±°
       it = g_matches[matchNum].g_bullets.erase(it);
     } else {
       ++it;
@@ -785,9 +788,24 @@ void updateSendParam(int matchNum) {
   g_matches[matchNum].SPlayer1.x = g_matches[matchNum].player1.x;
   g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
   g_matches[matchNum].SPlayer1.face = g_matches[matchNum].player1.face;
-  g_matches[matchNum].SPlayer1.acting = 0;  // ÃßÈÄ Ãæµ¹Ã³¸® ÀÌÈÄ Ãß°¡
+  char acting = 0;
+  acting = 
+      g_matches[matchNum].player1.isSliding ? '6'
+      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? '4'
+      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy < 0) ? '5'
+      : (g_matches[matchNum].player1.isCharging && g_matches[matchNum].player1.jumpSpeed <= -18) ? '3'
+      : g_matches[matchNum].player1.isCharging ? '2'
+      : g_matches[matchNum].player1.dx != 0 ? '1' : '0';
+  g_matches[matchNum].SPlayer1.acting = acting;  // ì¶”í›„ ì¶©ëŒì²˜ë¦¬ ì´í›„ ì¶”ê°€
   // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
   g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
-  g_matches[matchNum].SPlayer2.acting = 0;  // ÃßÈÄ Ãæµ¹Ã³¸® ÀÌÈÄ Ãß°¡
+  g_matches[matchNum].SPlayer2.face = g_matches[matchNum].player2.face;
+  acting = g_matches[matchNum].player2.isJumping ? 4
+      : g_matches[matchNum].player2.isCharging ? 2
+      : (g_matches[matchNum].player2.isCharging && g_matches[matchNum].player2.jumpSpeed <= -20) ? 3
+      : g_matches[matchNum].player2.isSliding ? 6
+      : (g_matches[matchNum].player2.isJumping && g_matches[matchNum].player2.dy > 0) ? 5
+      : g_matches[matchNum].player2.dx != 0 ? 1 : 0;
+  g_matches[matchNum].SPlayer2.acting = acting;  // ì¶”í›„ ì¶©ëŒì²˜ë¦¬ ì´í›„ ì¶”ê°€
 }
