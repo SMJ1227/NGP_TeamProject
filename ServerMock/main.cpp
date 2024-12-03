@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "../Client/network_util.hpp"
+#include "../Client/protocol.hpp"
 #include "../Server/sendParam.hpp"
 
 namespace server_mock
@@ -24,15 +25,22 @@ namespace server_mock
         auto constexpr header_size = sizeof(InfoType);
         auto constexpr packet_size = header_size + info_size;
 
+      struct InfoPacket {
+          game_protocol::PacketHeader header{.header = 1};
+        InfoType myinfo;
+          InfoType otherInfo;
+      };
         std::array<char, packet_size * 2> buf{};
-        auto temp_player_1_info = InfoType{
+
+      InfoPacket player1_packet{};
+       player1_packet.myinfo= InfoType{
             .x = 10,
             .y = 15,
             .acting = 1,
             .face = true,
         };
 
-        auto temp_player_2_info = InfoType{
+        player1_packet.otherInfo= InfoType{
             .x = 3,
             .y = 10,
             .acting = 1,
@@ -40,9 +48,7 @@ namespace server_mock
         };
 
         std::size_t total_packet_size = packet_size * 2;
-        std::memcpy(buf.data(), &temp_player_1_info, packet_size);
-        std::memcpy(std::next(buf.data(), packet_size), &temp_player_2_info,
-                    packet_size);
+        std::memcpy(buf.data(), &player1_packet, sizeof(player1_packet));
         return send(player_1_sock, buf.data(), total_packet_size, 0);
     }
 
