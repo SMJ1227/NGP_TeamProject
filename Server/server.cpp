@@ -22,7 +22,6 @@ typedef struct Player {
   bool isJumping = false;
   bool isSliding = false;
   bool slip = false;  // 미끄러지는 동안 계속 true
-  bool damaged = false;
   bool face = 0;  // face: left, right
   bool EnhancedJumpPower = false;
   bool spaceKeyReleased = true;
@@ -40,7 +39,6 @@ typedef struct Enemy {
 
 typedef struct Bullet {
   int x, y;
-  int dx, dy;
 };
 
 struct recvParam {
@@ -63,6 +61,8 @@ typedef struct MATCH {
   char p2 = 'a';
   int mapNum = 1;
   int score = 0;
+  int shootInterval = 0;
+  bool header = false;
   std::vector<Item> g_items;
   std::vector<Enemy> g_enemies;
   std::vector<Bullet> g_bullets;
@@ -92,7 +92,7 @@ void applyGravity(int matchNum);
 bool IsColliding(int matchNum, int x, int y);
 bool IsSlopeGoRightColliding(int matchNum, int x, int y);
 bool IsSlopeGoLeftColliding(int matchNum, int x, int y);
-bool IsNextColliding(int matchNum, int x, int y);
+bool IsNextColliding(int matchNum);
 void movePlayer(int matchNum);
 void moveBullets(int matchNum);
 // 오브젝트 충돌처리
@@ -179,7 +179,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     buf[retval] = '\0';
     char input0 = buf[0];
     char input1 = buf[1];
-    std::println("{}match player{} recv data: {:?}, {:?}", matchNum,
+    std::println("{:d}match player{:d} recv data: {:?}, {:?}", matchNum,
                  playerNum, buf[0], buf[1]);
     if (playerNum == 0) {
       if (buf[1] == '\0') { // 하나의 값만 들어옴
@@ -273,14 +273,38 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     updatePlayerD(matchNum);
     applyGravity(matchNum);
     movePlayer(matchNum);
-    // moveBullets();
-    // shootInterval++
-    // 아이템 재생성 코드
-    // 총알 재생성 코드
-    // 포탈 충돌처리
-    // 오브젝트 충돌처리
-    // sendParam업데이트
-    updateSendParam(matchNum);
+    if (IsNextColliding(matchNum)) {
+      if (g_matches[matchNum].mapNum == 1) {
+        InitMap(matchNum, map1);
+      } else if (g_matches[matchNum].mapNum == 2) {
+        InitMap(matchNum, map2);
+      }
+      DeleteAllEnemies(matchNum);
+      DeleteAllBullets(matchNum);
+      DeleteAllItems(matchNum);
+      initPlayer(matchNum);
+      initEnemy(matchNum);
+      initItem(matchNum);
+      g_matches[matchNum].score++;  // 추후 수정
+      g_matches[matchNum].header = true;
+    } 
+    else {
+      moveBullets(matchNum);
+      g_matches[matchNum].shootInterval++;
+      if (g_matches[matchNum].shootInterval > 120) {
+        ShootBullet(matchNum);
+        g_matches[matchNum].shootInterval = 0;
+      }
+      for (auto& item : g_matches[matchNum].g_items) {
+        if (item.interval <= 0) {
+          item.disable = false;
+        } else {
+          item.interval--;
+        }
+      }
+      CheckCollisions(matchNum);
+      updateSendParam(matchNum);
+    }
     LeaveCriticalSection(&cs);
     // send 부분
     char sendBuf[1 + BUFSIZE];
@@ -492,8 +516,6 @@ void ShootBullet(int matchNum) {
     Bullet newBullet;
     newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
     newBullet.y = enemy.y * GRID + GRID / 2;
-    newBullet.dx = 2;
-    newBullet.dy = 0;
     g_matches[matchNum].g_bullets.push_back(newBullet);
   }
 }
@@ -533,12 +555,9 @@ void updatePlayerD(int matchNum) {
     g_matches[matchNum].player1.spaceKeyReleased = false;
     if (!g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
-      if (g_matches[matchNum].player1.damaged) {
-        g_matches[matchNum].player1.damaged = false;
-      }
       g_matches[matchNum].player1.isCharging = true;
       g_matches[matchNum].player1.dx = 0;
-      g_matches[matchNum].player1.jumpSpeed -= 2;
+      g_matches[matchNum].player1.jumpSpeed -= 1;
       if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
         g_matches[matchNum].player1.jumpSpeed = -20;
       }
@@ -633,11 +652,11 @@ bool IsSlopeGoLeftColliding(int matchNum, int x, int y) {
   return false;
 }
 
-bool IsNextColliding(int matchNum, int x, int y) {
-  int leftX = (x - PLAYER_SIZE / 2) / GRID;
-  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
-  int topY = (y - PLAYER_SIZE / 2) / GRID;
-  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+bool IsNextColliding(int matchNum) {    // p1인지 p2인지 알기 위해 bool보단 리턴타입을 정수로 리턴하도록 바꾸기
+  int leftX = (g_matches[matchNum].player1.x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (g_matches[matchNum].player1.x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (g_matches[matchNum].player1.y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (g_matches[matchNum].player1.y + PLAYER_SIZE / 2 - 1) / GRID;
 
   if (g_matches[matchNum].map[topY][leftX] == 6 ||
       g_matches[matchNum].map[topY][rightX] == 6) {
@@ -711,8 +730,7 @@ void movePlayer(int matchNum) {
 void moveBullets(int matchNum) {
   for (auto it = g_matches[matchNum].g_bullets.begin();
        it != g_matches[matchNum].g_bullets.end();) {
-    it->x += it->dx;
-    it->y += it->dy;
+    it->x += 2;
     if (it->x < 0 || it->x > BOARD_WIDTH) {
       it = g_matches[matchNum].g_bullets.erase(it);
     } else {
@@ -769,10 +787,9 @@ void CheckPlayerBulletCollisions(int matchNum) {
         it->y >= g_matches[matchNum].player1.y - PLAYER_SIZE &&
         it->y <= g_matches[matchNum].player1.y + PLAYER_SIZE) {
       // 플레이어를 뒤로 밀침
-      g_matches[matchNum].player1.dx = it->dx * 2;
+      g_matches[matchNum].player1.dx = 40;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
-      g_matches[matchNum].player1.damaged = true;
       // 플레이어와 충돌 시 제거
       it = g_matches[matchNum].g_bullets.erase(it);
     } else {
