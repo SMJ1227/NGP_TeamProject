@@ -300,9 +300,10 @@ struct PlayerInfoMSG {
   sendParam::sendParam my_player, other_player;
 };
 
-DWORD WINAPI RecvClient(LPVOID lp_param) {
-  auto [server_sock, window_handle] =
-      *(reinterpret_cast<RecvClientParam*>(lp_param));
+DWORD WINAPI RecvClient(LPVOID lp_param)
+{
+    auto [server_sock, window_handle] =
+        *(reinterpret_cast<RecvClientParam*>(lp_param));
 
   delete reinterpret_cast<RecvClientParam*>(lp_param);
 
@@ -311,87 +312,102 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   std::array<char, BUFF_SIZE> recv_buff{};
   int recved_buffer_size{};
 
-  while (true) {
-    // 데이터 받기
-    return_value =
-        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size() - recved_buffer_size, 0);
-    switch (return_value) {
-      case SOCKET_ERROR: {
-        // 수신 문제
-        err_display(" : recv error");
-        return -1;
-      }
-      case 0: {
-        // 접속 종료 시 처리
-        err_display(" : disconnected");
-        return -1;
-      }
-    }
-    // 받은 데이터 크기 반영
-    recved_buffer_size += return_value;
+    while (true)
+    {
+        // 데이터 받기
+        return_value =
+            recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
+                 recv_buff.size() - recved_buffer_size, 0);
+        switch (return_value)
+        {
+        case SOCKET_ERROR:
+        {
+            // 수신 문제
+            err_display(" : recv error");
+            return -1;
+        }
+        case 0:
+        {
+            // 접속 종료 시 처리
+            err_display(" : disconnected");
+            return -1;
+        }
+        }
+        // 받은 데이터 크기 반영
+        recved_buffer_size += return_value;
 
-    for (bool unfinished = true; unfinished;) {
-      // 받은 데이터 처리
-      using HeaderType = sendParam::PKT_CAT;
-      HeaderType* header = reinterpret_cast<HeaderType*>(recv_buff.data());
-      switch (static_cast<HeaderType>(*header)) {
-        case sendParam::PKT_CAT::PLAYER_INFO: {
-          using InfoType = sendParam::sendParam;
+        for (bool unfinished = true; unfinished;)
+        {
+            // 받은 데이터 처리
+            using HeaderType = sendParam::PKT_CAT;
+            auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
+            switch (static_cast<HeaderType>(*header))
+            {
+            case sendParam::PKT_CAT::PLAYER_INFO:
+            {
+                using InfoType = sendParam::sendParam;
 
           int constexpr kInfoSize = sizeof(InfoType);
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
           int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
 
-          // 데이터를 다 받았는지 확인
-          if (kInfoPacketSize * 2 > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
+                // 데이터를 다 받았는지 확인
+                if (kInfoPacketSize * 2 > recved_buffer_size)
+                {
+                    unfinished = false;
+                    break;
+                }
 
-          // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          InfoType* my_player_info_packet =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+                // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
+                auto my_player_info_packet =
+                    reinterpret_cast<InfoType*>(recv_buff.data() +
+                        kInfoHeaderSize);
 
-          InfoType* other_player_info_packet = reinterpret_cast<InfoType*>(
-              std::next(recv_buff.data(), kInfoPacketSize + kInfoHeaderSize));
+                auto other_player_info_packet = reinterpret_cast<InfoType*>(
+                    std::next(recv_buff.data(),
+                              kInfoPacketSize + kInfoHeaderSize));
 
-          PlayerInfoMSG* player_infoes =
-              new PlayerInfoMSG{.my_player = *my_player_info_packet,
-                                .other_player = *other_player_info_packet};
-          {
-            // 윈도우로 보내기
-            ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                          static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
-                          reinterpret_cast<LPARAM>(player_infoes));
-          }
+                auto player_infoes =
+                    new PlayerInfoMSG{.my_player = *my_player_info_packet,
+                                      .other_player = *
+                                      other_player_info_packet};
+
+                // 윈도우로 보내기
+                ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                              static_cast<std::int8_t>(
+                                  HeaderType::PLAYER_INFO),
+                              reinterpret_cast<LPARAM>(player_infoes));
+
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = ", return_value);
           wow.emit();
 #endif  // !NDEBUG
 
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize * 2),
-                      recved_buffer_size - kInfoPacketSize * 2);
-          recved_buffer_size -= kInfoPacketSize * 2;
-          break;
-        }
-        case sendParam::PKT_CAT::CHANGE_MAP: {
-          using InfoType = std::int32_t;
+                // 버퍼 처리
+                std::memcpy(recv_buff.data(),
+                            std::next(recv_buff.data(), kInfoPacketSize * 2),
+                            recved_buffer_size - kInfoPacketSize * 2);
+                recved_buffer_size -= kInfoPacketSize * 2;
+                break;
+            }
+            case sendParam::PKT_CAT::CHANGE_MAP:
+            {
+                using InfoType = std::int32_t;
 
-          int constexpr kInfoSize = sizeof(InfoType);
-          int constexpr kInfoHeaderSize = sizeof(HeaderType);
-          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
-          // 데이터 다 받았는지 확인
-          if (kInfoPacketSize > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
+                int constexpr kInfoSize = sizeof(InfoType);
+                int constexpr kInfoHeaderSize = sizeof(HeaderType);
+                int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+                // 데이터 다 받았는지 확인
+                if (kInfoPacketSize > recved_buffer_size)
+                {
+                    unfinished = false;
+                    break;
+                }
 
-          // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
-          InfoType* map_num_info =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+                // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
+                auto map_num_info =
+                    reinterpret_cast<InfoType*>(recv_buff.data() +
+                        kInfoHeaderSize);
 
           // 윈도우로 보내기
           ::PostMessage(
@@ -405,21 +421,22 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           wow.emit();
 #endif  // !NDEBUG
 
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize),
-                      recved_buffer_size - kInfoPacketSize);
-          recved_buffer_size -= kInfoPacketSize;
-          break;
+                // 버퍼 처리
+                std::memcpy(recv_buff.data(),
+                            std::next(recv_buff.data(), kInfoPacketSize),
+                            recved_buffer_size - kInfoPacketSize);
+                recved_buffer_size -= kInfoPacketSize;
+                break;
+            }
+            default:
+            {
+                err_display(" : recv buffer handle error");
+                break;
+            }
+            }
         }
-        default: {
-          err_display(" : recv buffer handle error");
-          break;
-        }
-      }
     }
-  }
-  return 0;
+    return 0;
 }
 
 DWORD WINAPI SendClient(LPVOID lp_param) {
@@ -544,55 +561,63 @@ void Update();
 // 타이머 콜백
 void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
   switch (idEvent) {
-    case 2: {
+  case 2:
+  {
       if ((GetAsyncKeyState('s') & 0x8000) ||
-          (GetAsyncKeyState('S') & 0x8000)) {
-        // 접속 시도
-        int return_value{};
-        SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (INVALID_SOCKET == server_sock) {
-          err_quit("socket() 호출");
-        }
+          (GetAsyncKeyState('S') & 0x8000))
+      {
+          // 접속 시도
+          int return_value{};
+          SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
+          if (INVALID_SOCKET == server_sock)
+          {
+              err_quit("socket() 호출");
+          }
 
-        DWORD opt_val = 1;
-        setsockopt(server_sock, IPPROTO_TCP, TCP_NODELAY, (char const*)&opt_val,
-                   sizeof(opt_val));
-        sockaddr_in serveraddr{.sin_family = AF_INET,
-                               .sin_port = htons(game_protocol::g_server_port)};
-        return_value =
-            inet_pton(AF_INET, game_protocol::g_server_address.data(),
-                      &serveraddr.sin_addr);
-        if (SOCKET_ERROR == return_value) {
-          err_quit("유효하지 않은 주소가 입력되었습니다.");
-        }
+          DWORD opt_val = 1;
+          setsockopt(server_sock, IPPROTO_TCP, TCP_NODELAY,
+                     (char const*)&opt_val,
+                     sizeof(opt_val));
+          sockaddr_in serveraddr{.sin_family = AF_INET,
+                                 .sin_port = htons(
+                                     game_protocol::g_server_port)};
+          return_value =
+              inet_pton(AF_INET, game_protocol::g_server_address.data(),
+                        &serveraddr.sin_addr);
+          if (SOCKET_ERROR == return_value)
+          {
+              err_quit("유효하지 않은 주소가 입력되었습니다.");
+          }
 
-        return_value =
-            connect(server_sock, reinterpret_cast<sockaddr const*>(&serveraddr),
-                    sizeof(serveraddr));
-        if (return_value == SOCKET_ERROR) {
-          err_quit("connect() 호출");
-        }
+          return_value =
+              connect(server_sock,
+                      reinterpret_cast<sockaddr const*>(&serveraddr),
+                      sizeof(serveraddr));
+          if (return_value == SOCKET_ERROR)
+          {
+              err_quit("connect() 호출");
+          }
 
-        // 접속 성공시 ClientSend, CliendRecv 생성
-        g_hSendThread =
-            CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
+          // 접속 성공시 ClientSend, CliendRecv 생성
+          g_hSendThread =
+              CreateThread(NULL, 0, SendClient, (LPVOID)server_sock, 0, NULL);
 
-        auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
-                                              .window_handle = hWnd};
-        g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
-        recvParam = nullptr;
+          auto* recvParam = new RecvClientParam{.recv_socket = server_sock,
+                                                .window_handle = hWnd};
+          g_hRecvThread = CreateThread(NULL, 0, RecvClient, recvParam, 0, NULL);
+          recvParam = nullptr;
 
-        map_num = 1;
-        InitPlayer(g_player);
-        InitPlayer(otherPlayer);
-        InitMap(map, map0);
-        InitEnemy(map);
-        InitItems(map);
-        KillTimer(hWnd, 2);
-        SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
+          map_num = 1;
+          InitPlayer(g_player);
+          InitPlayer(otherPlayer);
+          InitMap(map, map0);
+          InitEnemy(map);
+          InitItems(map);
+          KillTimer(hWnd, 2);
+          SetTimer(hWnd, 3, 1000 / 60, (TIMERPROC)TimerProc);
       }
       break;
-    }
+  }
     case 3: {
       Update();
       // player1, 2와 아이템 충돌 확인
