@@ -353,8 +353,6 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         }
         g_matches[matchNum].header = false;
       }
-      
-     
     }
     // 이벤트 해제
     SetEvent(hEvent);
@@ -607,6 +605,57 @@ void updatePlayerD(int matchNum) {
   }
 
   // player2 처리
+  if (g_matches[matchNum].p2 == '0') {
+    if (g_matches[matchNum].player2.dx >= -3) {
+      g_matches[matchNum].player2.dx -= 1;
+      g_matches[matchNum].player2.face = false;
+    }
+  } else if (g_matches[matchNum].p2 == '1') {
+    if (g_matches[matchNum].player2.dx <= 3) {
+      g_matches[matchNum].player2.dx += 1;
+      g_matches[matchNum].player2.face = true;
+    }
+  } else if (g_matches[matchNum].p2 == 'a') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player2.dx > 0) {
+      g_matches[matchNum].player2.dx -= 1;
+    } else if (g_matches[matchNum].player2.dx < 0) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  } else if (g_matches[matchNum].p2 == ' ') {  // 점프 차징
+    g_matches[matchNum].player2.spaceKeyReleased = false;
+    if (!g_matches[matchNum].player2.isJumping &&
+        g_matches[matchNum].player2.jumpSpeed > -20) {
+      g_matches[matchNum].player2.isCharging = true;
+      g_matches[matchNum].player2.dx = 0;
+      g_matches[matchNum].player2.jumpSpeed -= 1;
+      if (g_matches[matchNum].player2.EnhancedJumpPower == 1) {
+        g_matches[matchNum].player2.jumpSpeed = -20;
+      }
+    }
+  } else if (g_matches[matchNum].p2 == '\b') {  // 점프 뛰기
+    if (!g_matches[matchNum].player2.spaceKeyReleased &&
+        g_matches[matchNum].player2.isCharging) {
+      g_matches[matchNum].player2.dy = g_matches[matchNum].player2.jumpSpeed;
+      g_matches[matchNum].player2.jumpSpeed = 0;
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.isJumping = true;
+      if (g_matches[matchNum].player2.EnhancedJumpPower == 1) {
+        g_matches[matchNum].player2.EnhancedJumpPower = 0;
+      }
+      g_matches[matchNum].player2.spaceKeyReleased = true;
+    }
+  } else if (g_matches[matchNum].p2 == 'a') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player2.dx > 0) {
+      g_matches[matchNum].player2.dx -= 1;
+    } else if (g_matches[matchNum].player2.dx < 0) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  }
+  if (g_matches[matchNum].p2 != ' ') {
+    g_matches[matchNum].p2 = 'a';
+  }
 }
 
 void applyGravity(int matchNum) {
@@ -684,6 +733,7 @@ bool IsNextColliding(int matchNum) {    // p1인지 p2인지 알기 위해 bool�
 }
 
 void movePlayer(int matchNum) {
+    // player 1
   int newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
   int newY = g_matches[matchNum].player1.y + g_matches[matchNum].player1.dy;
 
@@ -743,6 +793,67 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.x = newX;
     g_matches[matchNum].player1.y = newY;
   }
+
+  // player 2
+  newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
+  newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
+
+  bool isVerticalCollision =
+      IsColliding(matchNum, g_matches[matchNum].player2.x, newY);
+  bool isHorizontalCollision =
+      IsColliding(matchNum, newX, g_matches[matchNum].player2.y);
+  bool isSlopeGoRightCollision = IsSlopeGoRightColliding(
+      matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
+  bool isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
+      matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
+
+  // 수직 충돌 처리
+  if (!isVerticalCollision) {
+    g_matches[matchNum].player2.y = newY;
+    if (!g_matches[matchNum].player2.EnhancedJumpPower) {
+      g_matches[matchNum].player2.isJumping = true;
+    }
+  } else {
+    // 바닥 충돌 시 y축 위치 보정
+    if (g_matches[matchNum].player2.dy > 0) {
+      if (!IsColliding(matchNum, g_matches[matchNum].player2.x,
+                       g_matches[matchNum].player2.y + 1)) {
+        g_matches[matchNum].player2.y += 1;
+      }
+    }
+    g_matches[matchNum].player2.dy = 0;  // 충돌 후 y축 속도 초기화
+    g_matches[matchNum].player2.isJumping = false;
+    g_matches[matchNum].player2.isSliding = false;
+  }
+
+  // 수평 충돌 처리
+  if (!isHorizontalCollision) {
+    g_matches[matchNum].player2.x = newX;
+  } else {
+    g_matches[matchNum].player2.dx = 0;  // 충돌 후 x축 속도 초기화
+  }
+
+  if (isSlopeGoRightCollision) {
+    g_matches[matchNum].player2.isSliding = true;
+
+    g_matches[matchNum].player2.dy = 1;  // 경사면 위에서 미끄러짐 속도
+    g_matches[matchNum].player2.dx = 3;  // 오른쪽 아래로 미끄러짐
+    newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
+    newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
+    g_matches[matchNum].player2.x = newX;
+    g_matches[matchNum].player2.y = newY;
+  }
+
+  if (isSlopeGoLeftCollision) {
+    g_matches[matchNum].player2.isSliding = true;
+
+    g_matches[matchNum].player2.dy = 1;  // 경사면 위에서 미끄러짐 속도
+    g_matches[matchNum].player2.dx = -3;  // 오른쪽 아래로 미끄러짐
+    newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
+    newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
+    g_matches[matchNum].player2.x = newX;
+    g_matches[matchNum].player2.y = newY;
+  }
 }
 
 void moveBullets(int matchNum) {
@@ -765,15 +876,31 @@ void CheckCollisions(int matchNum) {
 }
 
 void CheckEnemyPlayerCollisions(int matchNum) {
+  //player 1
   for (auto it = g_matches[matchNum].g_enemies.begin();
        it != g_matches[matchNum].g_enemies.end();) {
     if (g_matches[matchNum].player1.x >= it->x * GRID &&
         g_matches[matchNum].player1.x <= (it->x + 1) * GRID &&
         g_matches[matchNum].player1.y >= it->y * GRID &&
         g_matches[matchNum].player1.y <= (it->y + 1) * GRID) {
-      g_matches[matchNum].player1.dx = 4;
+      g_matches[matchNum].player1.dx = 10;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
+      ++it;  // 충돌 시 반복자를 증가시킵니다.
+    } else {
+      ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
+    }
+  }
+  // player 2
+  for (auto it = g_matches[matchNum].g_enemies.begin();
+       it != g_matches[matchNum].g_enemies.end();) {
+    if (g_matches[matchNum].player2.x >= it->x * GRID &&
+        g_matches[matchNum].player2.x <= (it->x + 1) * GRID &&
+        g_matches[matchNum].player2.y >= it->y * GRID &&
+        g_matches[matchNum].player2.y <= (it->y + 1) * GRID) {
+      g_matches[matchNum].player2.dx = 10;
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.jumpSpeed = 0;
       ++it;  // 충돌 시 반복자를 증가시킵니다.
     } else {
       ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
@@ -782,6 +909,7 @@ void CheckEnemyPlayerCollisions(int matchNum) {
 }
 
 void CheckItemPlayerCollisions(int matchNum) {
+  // player 1
   for (auto it = g_matches[matchNum].g_items.begin();
        it != g_matches[matchNum].g_items.end();) {
     if (g_matches[matchNum].player1.x >= it->x * GRID &&
@@ -795,9 +923,24 @@ void CheckItemPlayerCollisions(int matchNum) {
     }
     ++it;
   }
+  // player 2
+  for (auto it = g_matches[matchNum].g_items.begin();
+       it != g_matches[matchNum].g_items.end();) {
+    if (g_matches[matchNum].player2.x >= it->x * GRID &&
+        g_matches[matchNum].player2.x <= (it->x + 1) * GRID &&
+        g_matches[matchNum].player2.y >= it->y * GRID &&
+        g_matches[matchNum].player2.y <= (it->y + 1) * GRID) {
+      g_matches[matchNum].player2.EnhancedJumpPower = true;
+      g_matches[matchNum].player2.isJumping = false;
+      it->disable = true;
+      it->interval = 60;
+    }
+    ++it;
+  }
 }
 
 void CheckPlayerBulletCollisions(int matchNum) {
+  // player1
   for (auto it = g_matches[matchNum].g_bullets.begin();
        it != g_matches[matchNum].g_bullets.end();) {
     if (it->x >= g_matches[matchNum].player1.x - PLAYER_SIZE &&
@@ -808,6 +951,24 @@ void CheckPlayerBulletCollisions(int matchNum) {
       g_matches[matchNum].player1.dx = 40;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
+      // 플레이어와 충돌 시 제거
+      it = g_matches[matchNum].g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  // player2
+  for (auto it = g_matches[matchNum].g_bullets.begin();
+       it != g_matches[matchNum].g_bullets.end();) {
+    if (it->x >= g_matches[matchNum].player2.x - PLAYER_SIZE &&
+        it->x <= g_matches[matchNum].player2.x + PLAYER_SIZE &&
+        it->y >= g_matches[matchNum].player2.y - PLAYER_SIZE &&
+        it->y <= g_matches[matchNum].player2.y + PLAYER_SIZE) {
+      // 플레이어를 뒤로 밀침
+      g_matches[matchNum].player2.dx = 40;
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.jumpSpeed = 0;
       // 플레이어와 충돌 시 제거
       it = g_matches[matchNum].g_bullets.erase(it);
     } else {
