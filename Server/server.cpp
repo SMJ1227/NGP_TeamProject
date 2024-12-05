@@ -22,7 +22,6 @@ typedef struct Player {
   bool isJumping = false;
   bool isSliding = false;
   bool slip = false;  // 미끄러지는 동안 계속 true
-  bool damaged = false;
   bool face = 0;  // face: left, right
   bool EnhancedJumpPower = false;
   bool spaceKeyReleased = true;
@@ -40,7 +39,6 @@ typedef struct Enemy {
 
 typedef struct Bullet {
   int x, y;
-  int dx, dy;
 };
 
 struct recvParam {
@@ -54,15 +52,17 @@ typedef struct MATCH {
   HANDLE recvThread[2]{NULL, NULL};
   HANDLE timerThread;
   Player player1;
-  sendParam::sendParam SPlayer1;
+  sendParam::playerInfo SPlayer1;
   Player player2;
-  sendParam::sendParam SPlayer2;
+  sendParam::playerInfo SPlayer2;
   int map[MAP_HEIGHT][MAP_WIDTH];
   char matchNum = 0;
   char p1 = 'a';
   char p2 = 'a';
   int mapNum = 1;
   int score = 0;
+  int shootInterval = 0;
+  bool header = false;
   std::vector<Item> g_items;
   std::vector<Enemy> g_enemies;
   std::vector<Bullet> g_bullets;
@@ -92,7 +92,7 @@ void applyGravity(int matchNum);
 bool IsColliding(int matchNum, int x, int y);
 bool IsSlopeGoRightColliding(int matchNum, int x, int y);
 bool IsSlopeGoLeftColliding(int matchNum, int x, int y);
-bool IsNextColliding(int matchNum, int x, int y);
+bool IsNextColliding(int matchNum);
 void movePlayer(int matchNum);
 void moveBullets(int matchNum);
 // 오브젝트 충돌처리
@@ -179,7 +179,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     buf[retval] = '\0';
     char input0 = buf[0];
     char input1 = buf[1];
-    std::println("{}match player{} recv data: {:?}, {:?}", matchNum,
+    std::println("{:d}match player{:d} recv data: {:?}, {:?}", matchNum,
                  playerNum, buf[0], buf[1]);
     if (playerNum == 0) {
       if (buf[1] == '\0') { // 하나의 값만 들어옴
@@ -244,18 +244,11 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     }
 
     // 타이머 대기 시작
-    // printf("타이머 대기 시작\n");
     DWORD waitResult = WaitForSingleObject(hTimer, INFINITE);
     if (waitResult != WAIT_OBJECT_0) {
       printf("타이머 대기 실패 또는 중단: %d\n", GetLastError());
       break;
     }
-    // printf("타이머 대기 완료\n");
-
-    //// 이벤트 대기
-    // WaitForSingleObject(hEvent, INFINITE);
-    // ResetEvent(hEvent);
-
     // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는 지 비교한다, 다르다면 감소
     while (!(matchNum < 0) && matchNum < g_matches.size() &&
@@ -269,49 +262,96 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     }
 
     EnterCriticalSection(&cs);
-    // 플레이어 dx dy 변화
     updatePlayerD(matchNum);
     applyGravity(matchNum);
     movePlayer(matchNum);
-    // moveBullets();
-    // shootInterval++
-    // 아이템 재생성 코드
-    // 총알 재생성 코드
-    // 포탈 충돌처리
-    // 오브젝트 충돌처리
-    // sendParam업데이트
-    updateSendParam(matchNum);
+    if (IsNextColliding(matchNum)) {
+      if (g_matches[matchNum].mapNum == 1) {
+        InitMap(matchNum, map1);
+      } else if (g_matches[matchNum].mapNum == 2) {
+        InitMap(matchNum, map2);
+      }
+      DeleteAllEnemies(matchNum);
+      DeleteAllBullets(matchNum);
+      DeleteAllItems(matchNum);
+      initPlayer(matchNum);
+      initEnemy(matchNum);
+      initItem(matchNum);
+      g_matches[matchNum].score++;  // 추후 수정
+      g_matches[matchNum].header = true;
+    } 
+    else {
+      moveBullets(matchNum);
+      g_matches[matchNum].shootInterval++;
+      if (g_matches[matchNum].shootInterval > 120) {
+        ShootBullet(matchNum);
+        g_matches[matchNum].shootInterval = 0;
+      }
+      for (auto& item : g_matches[matchNum].g_items) {
+        if (item.interval <= 0) {
+          item.disable = false;
+        } else {
+          item.interval--;
+        }
+      }
+      CheckCollisions(matchNum);
+      updateSendParam(matchNum);
+    }
     LeaveCriticalSection(&cs);
+
     // send 부분
-    char sendBuf[1 + BUFSIZE];
-    int sendSize = 1 + sizeof(sendParam::sendParam);
+    char sendBuf[BUFSIZE];
+    int sendSize = sizeof(sendParam::sendParam);
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
         // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
         continue;
       }
-      // printf("클라이언트 %d 소켓 확인: %d\n", i,
-      // g_matches[matchNum].client_sock[i]);
-      if (i == 0) {
-        sendBuf[0] = static_cast<std::int8_t>(
-            sendParam::PKT_CAT::PLAYER_INFO);  // 패킷 타입 설정
-        memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer1,
-               sizeof(sendParam::sendParam));  // 데이터 복사
-      } else if (i == 1) {
-        sendBuf[0] = static_cast<std::int8_t>(
-            sendParam::PKT_CAT::PLAYER_INFO);  // 패킷 타입 설정
-        memcpy(sendBuf + 1, &g_matches[matchNum].SPlayer2,
-               sizeof(sendParam::sendParam));  // 데이터 복사
-      }
-      int retval =
-          send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
-      if (retval == SOCKET_ERROR) {
-        printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i,
-               WSAGetLastError());
-      } else {
-        // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i,
-        // retval);
+      if (!g_matches[matchNum].header) {    // playerinfo
+        sendParam::sendParam sendParam;
+        // sendParam.header.header = static_cast<std::int8_t>(sendParam::PKT_CAT::PLAYER_INFO);
+        if (i == 0) {
+          sendParam.myInfo = g_matches[matchNum].SPlayer1;
+          sendParam.otherInfo = g_matches[matchNum].SPlayer2;
+
+        } else if (i == 1) {
+          sendParam.myInfo = g_matches[matchNum].SPlayer2;
+          sendParam.otherInfo = g_matches[matchNum].SPlayer1;
+        }
+        sendParam.g_bullets.resize(g_matches[matchNum].g_bullets.size());
+        std::copy(g_matches[matchNum].g_bullets.begin(),
+                  g_matches[matchNum].g_bullets.end(),
+                  sendParam.g_bullets.begin());
+        memcpy(sendBuf, &sendParam.header, sizeof(sendParam.header));
+        memcpy(sendBuf + sizeof(sendParam.header), &sendParam.myInfo, sizeof(sendParam.myInfo));
+        memcpy(sendBuf + sizeof(sendParam.header) + sizeof(sendParam.myInfo), &sendParam.otherInfo, sizeof(sendParam.otherInfo));
+
+        // g_bullets 데이터 추가 직렬화
+        size_t offset = sizeof(sendParam.header) + sizeof(sendParam.myInfo) + sizeof(sendParam.otherInfo);
+        for (const auto& bullet : sendParam.g_bullets) {
+          memcpy(sendBuf + offset, &bullet, sizeof(sendParam::Bullet));
+          offset += sizeof(sendParam::Bullet);
+        }
+        int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        if (retval == SOCKET_ERROR) {
+          printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
+        } else {
+          // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
+        }
+      } 
+      else {
+        sendParam::MapInfoPacket mapInfoPacket;
+        mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
+        memcpy(sendBuf, &mapInfoPacket, sizeof(sendParam::MapInfoPacket));
+        int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        if (retval == SOCKET_ERROR) {
+          printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
+        } 
+        else {
+          // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
+        }
+        g_matches[matchNum].header = false;
       }
     }
     // 이벤트 해제
@@ -492,8 +532,6 @@ void ShootBullet(int matchNum) {
     Bullet newBullet;
     newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
     newBullet.y = enemy.y * GRID + GRID / 2;
-    newBullet.dx = 2;
-    newBullet.dy = 0;
     g_matches[matchNum].g_bullets.push_back(newBullet);
   }
 }
@@ -533,12 +571,9 @@ void updatePlayerD(int matchNum) {
     g_matches[matchNum].player1.spaceKeyReleased = false;
     if (!g_matches[matchNum].player1.isJumping &&
         g_matches[matchNum].player1.jumpSpeed > -20) {
-      if (g_matches[matchNum].player1.damaged) {
-        g_matches[matchNum].player1.damaged = false;
-      }
       g_matches[matchNum].player1.isCharging = true;
       g_matches[matchNum].player1.dx = 0;
-      g_matches[matchNum].player1.jumpSpeed -= 2;
+      g_matches[matchNum].player1.jumpSpeed -= 1;
       if (g_matches[matchNum].player1.EnhancedJumpPower == 1) {
         g_matches[matchNum].player1.jumpSpeed = -20;
       }
@@ -570,6 +605,57 @@ void updatePlayerD(int matchNum) {
   }
 
   // player2 처리
+  if (g_matches[matchNum].p2 == '0') {
+    if (g_matches[matchNum].player2.dx >= -3) {
+      g_matches[matchNum].player2.dx -= 1;
+      g_matches[matchNum].player2.face = false;
+    }
+  } else if (g_matches[matchNum].p2 == '1') {
+    if (g_matches[matchNum].player2.dx <= 3) {
+      g_matches[matchNum].player2.dx += 1;
+      g_matches[matchNum].player2.face = true;
+    }
+  } else if (g_matches[matchNum].p2 == 'a') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player2.dx > 0) {
+      g_matches[matchNum].player2.dx -= 1;
+    } else if (g_matches[matchNum].player2.dx < 0) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  } else if (g_matches[matchNum].p2 == ' ') {  // 점프 차징
+    g_matches[matchNum].player2.spaceKeyReleased = false;
+    if (!g_matches[matchNum].player2.isJumping &&
+        g_matches[matchNum].player2.jumpSpeed > -20) {
+      g_matches[matchNum].player2.isCharging = true;
+      g_matches[matchNum].player2.dx = 0;
+      g_matches[matchNum].player2.jumpSpeed -= 1;
+      if (g_matches[matchNum].player2.EnhancedJumpPower == 1) {
+        g_matches[matchNum].player2.jumpSpeed = -20;
+      }
+    }
+  } else if (g_matches[matchNum].p2 == '\b') {  // 점프 뛰기
+    if (!g_matches[matchNum].player2.spaceKeyReleased &&
+        g_matches[matchNum].player2.isCharging) {
+      g_matches[matchNum].player2.dy = g_matches[matchNum].player2.jumpSpeed;
+      g_matches[matchNum].player2.jumpSpeed = 0;
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.isJumping = true;
+      if (g_matches[matchNum].player2.EnhancedJumpPower == 1) {
+        g_matches[matchNum].player2.EnhancedJumpPower = 0;
+      }
+      g_matches[matchNum].player2.spaceKeyReleased = true;
+    }
+  } else if (g_matches[matchNum].p2 == 'a') {
+    // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
+    if (g_matches[matchNum].player2.dx > 0) {
+      g_matches[matchNum].player2.dx -= 1;
+    } else if (g_matches[matchNum].player2.dx < 0) {
+      g_matches[matchNum].player2.dx += 1;
+    }
+  }
+  if (g_matches[matchNum].p2 != ' ') {
+    g_matches[matchNum].p2 = 'a';
+  }
 }
 
 void applyGravity(int matchNum) {
@@ -633,11 +719,11 @@ bool IsSlopeGoLeftColliding(int matchNum, int x, int y) {
   return false;
 }
 
-bool IsNextColliding(int matchNum, int x, int y) {
-  int leftX = (x - PLAYER_SIZE / 2) / GRID;
-  int rightX = (x + PLAYER_SIZE / 2 - 1) / GRID;
-  int topY = (y - PLAYER_SIZE / 2) / GRID;
-  int bottomY = (y + PLAYER_SIZE / 2 - 1) / GRID;
+bool IsNextColliding(int matchNum) {    // p1인지 p2인지 알기 위해 bool보단 리턴타입을 정수로 리턴하도록 바꾸기
+  int leftX = (g_matches[matchNum].player1.x - PLAYER_SIZE / 2) / GRID;
+  int rightX = (g_matches[matchNum].player1.x + PLAYER_SIZE / 2 - 1) / GRID;
+  int topY = (g_matches[matchNum].player1.y - PLAYER_SIZE / 2) / GRID;
+  int bottomY = (g_matches[matchNum].player1.y + PLAYER_SIZE / 2 - 1) / GRID;
 
   if (g_matches[matchNum].map[topY][leftX] == 6 ||
       g_matches[matchNum].map[topY][rightX] == 6) {
@@ -647,6 +733,7 @@ bool IsNextColliding(int matchNum, int x, int y) {
 }
 
 void movePlayer(int matchNum) {
+    // player 1
   int newX = g_matches[matchNum].player1.x + g_matches[matchNum].player1.dx;
   int newY = g_matches[matchNum].player1.y + g_matches[matchNum].player1.dy;
 
@@ -706,13 +793,73 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.x = newX;
     g_matches[matchNum].player1.y = newY;
   }
+
+  // player 2
+  newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
+  newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
+
+  bool isVerticalCollision =
+      IsColliding(matchNum, g_matches[matchNum].player2.x, newY);
+  bool isHorizontalCollision =
+      IsColliding(matchNum, newX, g_matches[matchNum].player2.y);
+  bool isSlopeGoRightCollision = IsSlopeGoRightColliding(
+      matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
+  bool isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
+      matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
+
+  // 수직 충돌 처리
+  if (!isVerticalCollision) {
+    g_matches[matchNum].player2.y = newY;
+    if (!g_matches[matchNum].player2.EnhancedJumpPower) {
+      g_matches[matchNum].player2.isJumping = true;
+    }
+  } else {
+    // 바닥 충돌 시 y축 위치 보정
+    if (g_matches[matchNum].player2.dy > 0) {
+      if (!IsColliding(matchNum, g_matches[matchNum].player2.x,
+                       g_matches[matchNum].player2.y + 1)) {
+        g_matches[matchNum].player2.y += 1;
+      }
+    }
+    g_matches[matchNum].player2.dy = 0;  // 충돌 후 y축 속도 초기화
+    g_matches[matchNum].player2.isJumping = false;
+    g_matches[matchNum].player2.isSliding = false;
+  }
+
+  // 수평 충돌 처리
+  if (!isHorizontalCollision) {
+    g_matches[matchNum].player2.x = newX;
+  } else {
+    g_matches[matchNum].player2.dx = 0;  // 충돌 후 x축 속도 초기화
+  }
+
+  if (isSlopeGoRightCollision) {
+    g_matches[matchNum].player2.isSliding = true;
+
+    g_matches[matchNum].player2.dy = 1;  // 경사면 위에서 미끄러짐 속도
+    g_matches[matchNum].player2.dx = 3;  // 오른쪽 아래로 미끄러짐
+    newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
+    newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
+    g_matches[matchNum].player2.x = newX;
+    g_matches[matchNum].player2.y = newY;
+  }
+
+  if (isSlopeGoLeftCollision) {
+    g_matches[matchNum].player2.isSliding = true;
+
+    g_matches[matchNum].player2.dy = 1;  // 경사면 위에서 미끄러짐 속도
+    g_matches[matchNum].player2.dx = -3;  // 오른쪽 아래로 미끄러짐
+    newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
+    newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
+    g_matches[matchNum].player2.x = newX;
+    g_matches[matchNum].player2.y = newY;
+  }
 }
 
 void moveBullets(int matchNum) {
   for (auto it = g_matches[matchNum].g_bullets.begin();
        it != g_matches[matchNum].g_bullets.end();) {
-    it->x += it->dx;
-    it->y += it->dy;
+    it->x += 2;
     if (it->x < 0 || it->x > BOARD_WIDTH) {
       it = g_matches[matchNum].g_bullets.erase(it);
     } else {
@@ -729,15 +876,31 @@ void CheckCollisions(int matchNum) {
 }
 
 void CheckEnemyPlayerCollisions(int matchNum) {
+  //player 1
   for (auto it = g_matches[matchNum].g_enemies.begin();
        it != g_matches[matchNum].g_enemies.end();) {
     if (g_matches[matchNum].player1.x >= it->x * GRID &&
         g_matches[matchNum].player1.x <= (it->x + 1) * GRID &&
         g_matches[matchNum].player1.y >= it->y * GRID &&
         g_matches[matchNum].player1.y <= (it->y + 1) * GRID) {
-      g_matches[matchNum].player1.dx = 4;
+      g_matches[matchNum].player1.dx = 10;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
+      ++it;  // 충돌 시 반복자를 증가시킵니다.
+    } else {
+      ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
+    }
+  }
+  // player 2
+  for (auto it = g_matches[matchNum].g_enemies.begin();
+       it != g_matches[matchNum].g_enemies.end();) {
+    if (g_matches[matchNum].player2.x >= it->x * GRID &&
+        g_matches[matchNum].player2.x <= (it->x + 1) * GRID &&
+        g_matches[matchNum].player2.y >= it->y * GRID &&
+        g_matches[matchNum].player2.y <= (it->y + 1) * GRID) {
+      g_matches[matchNum].player2.dx = 10;
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.jumpSpeed = 0;
       ++it;  // 충돌 시 반복자를 증가시킵니다.
     } else {
       ++it;  // 충돌이 발생하지 않았을 때도 반복자를 증가시킵니다.
@@ -746,6 +909,7 @@ void CheckEnemyPlayerCollisions(int matchNum) {
 }
 
 void CheckItemPlayerCollisions(int matchNum) {
+  // player 1
   for (auto it = g_matches[matchNum].g_items.begin();
        it != g_matches[matchNum].g_items.end();) {
     if (g_matches[matchNum].player1.x >= it->x * GRID &&
@@ -759,9 +923,24 @@ void CheckItemPlayerCollisions(int matchNum) {
     }
     ++it;
   }
+  // player 2
+  for (auto it = g_matches[matchNum].g_items.begin();
+       it != g_matches[matchNum].g_items.end();) {
+    if (g_matches[matchNum].player2.x >= it->x * GRID &&
+        g_matches[matchNum].player2.x <= (it->x + 1) * GRID &&
+        g_matches[matchNum].player2.y >= it->y * GRID &&
+        g_matches[matchNum].player2.y <= (it->y + 1) * GRID) {
+      g_matches[matchNum].player2.EnhancedJumpPower = true;
+      g_matches[matchNum].player2.isJumping = false;
+      it->disable = true;
+      it->interval = 60;
+    }
+    ++it;
+  }
 }
 
 void CheckPlayerBulletCollisions(int matchNum) {
+  // player1
   for (auto it = g_matches[matchNum].g_bullets.begin();
        it != g_matches[matchNum].g_bullets.end();) {
     if (it->x >= g_matches[matchNum].player1.x - PLAYER_SIZE &&
@@ -769,10 +948,27 @@ void CheckPlayerBulletCollisions(int matchNum) {
         it->y >= g_matches[matchNum].player1.y - PLAYER_SIZE &&
         it->y <= g_matches[matchNum].player1.y + PLAYER_SIZE) {
       // 플레이어를 뒤로 밀침
-      g_matches[matchNum].player1.dx = it->dx * 2;
+      g_matches[matchNum].player1.dx = 40;
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
-      g_matches[matchNum].player1.damaged = true;
+      // 플레이어와 충돌 시 제거
+      it = g_matches[matchNum].g_bullets.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  // player2
+  for (auto it = g_matches[matchNum].g_bullets.begin();
+       it != g_matches[matchNum].g_bullets.end();) {
+    if (it->x >= g_matches[matchNum].player2.x - PLAYER_SIZE &&
+        it->x <= g_matches[matchNum].player2.x + PLAYER_SIZE &&
+        it->y >= g_matches[matchNum].player2.y - PLAYER_SIZE &&
+        it->y <= g_matches[matchNum].player2.y + PLAYER_SIZE) {
+      // 플레이어를 뒤로 밀침
+      g_matches[matchNum].player2.dx = 40;
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.jumpSpeed = 0;
       // 플레이어와 충돌 시 제거
       it = g_matches[matchNum].g_bullets.erase(it);
     } else {
@@ -789,23 +985,36 @@ void updateSendParam(int matchNum) {
   g_matches[matchNum].SPlayer1.y = g_matches[matchNum].player1.y;
   g_matches[matchNum].SPlayer1.face = g_matches[matchNum].player1.face;
   char acting = 0;
-  acting = 
-      g_matches[matchNum].player1.isSliding ? '6'
-      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy > 0) ? '4'
-      : (g_matches[matchNum].player1.isJumping && g_matches[matchNum].player1.dy < 0) ? '5'
-      : (g_matches[matchNum].player1.isCharging && g_matches[matchNum].player1.jumpSpeed <= -18) ? '3'
-      : g_matches[matchNum].player1.isCharging ? '2'
-      : g_matches[matchNum].player1.dx != 0 ? '1' : '0';
+  acting = g_matches[matchNum].player1.isSliding ? '6'
+           : (g_matches[matchNum].player1.isJumping &&
+              g_matches[matchNum].player1.dy > 0)
+               ? '4'
+           : (g_matches[matchNum].player1.isJumping &&
+              g_matches[matchNum].player1.dy < 0)
+               ? '5'
+           : (g_matches[matchNum].player1.isCharging &&
+              g_matches[matchNum].player1.jumpSpeed <= -18)
+               ? '3'
+           : g_matches[matchNum].player1.isCharging ? '2'
+           : g_matches[matchNum].player1.dx != 0    ? '1'
+                                                    : '0';
   g_matches[matchNum].SPlayer1.acting = acting;  // 추후 충돌처리 이후 추가
   // player 2
   g_matches[matchNum].SPlayer2.x = g_matches[matchNum].player2.x;
   g_matches[matchNum].SPlayer2.y = g_matches[matchNum].player2.y;
   g_matches[matchNum].SPlayer2.face = g_matches[matchNum].player2.face;
-  acting = g_matches[matchNum].player2.isJumping ? 4
-      : g_matches[matchNum].player2.isCharging ? 2
-      : (g_matches[matchNum].player2.isCharging && g_matches[matchNum].player2.jumpSpeed <= -20) ? 3
-      : g_matches[matchNum].player2.isSliding ? 6
-      : (g_matches[matchNum].player2.isJumping && g_matches[matchNum].player2.dy > 0) ? 5
-      : g_matches[matchNum].player2.dx != 0 ? 1 : 0;
+  acting = g_matches[matchNum].player2.isSliding ? '6'
+           : (g_matches[matchNum].player2.isJumping &&
+              g_matches[matchNum].player2.dy > 0)
+               ? '4'
+           : (g_matches[matchNum].player2.isJumping &&
+              g_matches[matchNum].player2.dy < 0)
+               ? '5'
+           : (g_matches[matchNum].player2.isCharging &&
+              g_matches[matchNum].player2.jumpSpeed <= -18)
+               ? '3'
+           : g_matches[matchNum].player2.isCharging ? '2'
+           : g_matches[matchNum].player2.dx != 0    ? '1'
+                                                    : '0';
   g_matches[matchNum].SPlayer2.acting = acting;  // 추후 충돌처리 이후 추가
 }
