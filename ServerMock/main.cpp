@@ -24,7 +24,7 @@ struct Bullet {
 };
 }  // namespace server_types
 
-std::vector<server_types::Bullet> server_local_bullets{};
+std::vector server_local_bullets{server_types::Bullet{1, 4}, {2, 5}, {3, 4}};
 
 int send_player_info(SOCKET player_1_sock) {
   using HeaderType = sendParam::PKT_CAT;
@@ -43,7 +43,7 @@ int send_player_info(SOCKET player_1_sock) {
   // std::ranges::copy(server_local_bullets, send_bullets.begin());
 
   std::ranges::transform(
-      server_local_bullets, send_bullets.begin(),
+      server_local_bullets, std::back_inserter(send_bullets),
       [](auto &pos) -> sendParam::Bullet { return {.x = pos.x, .y = pos.y}; });
 
   auto p1info = InfoType{

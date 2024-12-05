@@ -338,22 +338,21 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
-          using PacketType = sendParam::sendParam;
+          using PacketType = sendParam::recvParam_alt;
           using InfoType = sendParam::playerInfo;
 
           int constexpr kInfoSize = sizeof(InfoType);
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
           int constexpr kFixedInfoSize = sizeof(InfoType) * 2;
 
-          // int constexpr kInfoPacketSize = sizeof(PacketType);
+          int constexpr kInfoPacketSize = sizeof(PacketType);
 
           auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
 
           sendParam::Bullet* bullets = reinterpret_cast<sendParam::Bullet*>(
-              std::next(recv_buff.data(), kInfoHeaderSize + kFixedInfoSize));
-          std::uint32_t bullets_size =
-              (recved_buffer_size - kInfoHeaderSize - kFixedInfoSize) /
-              sizeof(sendParam::Bullet);
+              std::next(recv_buff.data(), kInfoPacketSize));
+          std::uint32_t bullets_size = (recved_buffer_size - kInfoPacketSize) /
+                                       sizeof(sendParam::Bullet);
 
           auto bullet_range =
               std::ranges::subrange(bullets, bullets + bullets_size);
@@ -377,7 +376,10 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                         reinterpret_cast<LPARAM>(player_infoes));
 
 #ifndef NDEBUG
-          std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}");
+          std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
+                       recved_buffer_size, packet_ptr->myInfo.x,
+                       packet_ptr->myInfo.y, packet_ptr->otherInfo.x,
+                       packet_ptr->otherInfo.y);
           wow.emit();
 #endif  // !NDEBUG
 
