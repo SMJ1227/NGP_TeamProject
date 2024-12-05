@@ -297,7 +297,8 @@ struct RecvClientParam {
   HWND window_handle;
 };
 struct PlayerInfoMSG {
-  sendParam::sendParam my_player, other_player;
+  sendParam::playerInfo my_player, other_player;
+  std::vector<sendParam::Bullet> bullets;
 };
 
 DWORD WINAPI RecvClient(LPVOID lp_param) {
@@ -337,28 +338,38 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
-          using InfoType = sendParam::sendParam;
+          using PacketType = sendParam::sendParam;
+          using InfoType = sendParam::playerInfo;
 
           int constexpr kInfoSize = sizeof(InfoType);
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
-          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+          int constexpr kFixedInfoSize = sizeof(InfoType) * 2;
 
-          // 데이터를 다 받았는지 확인
-          if (kInfoPacketSize * 2 > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
+          // int constexpr kInfoPacketSize = sizeof(PacketType);
+
+          auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
+
+          sendParam::Bullet* bullets = reinterpret_cast<sendParam::Bullet*>(
+              std::next(recv_buff.data(), kInfoHeaderSize + kFixedInfoSize));
+          std::uint32_t bullets_size =
+              (recved_buffer_size - kInfoHeaderSize - kFixedInfoSize) /
+              sizeof(sendParam::Bullet);
+
+          auto bullet_range =
+              std::ranges::subrange(bullets, bullets + bullets_size);
+
+          // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
+          // if (kInfoPacketSize > recved_buffer_size) {
+          //  unfinished = false;
+          //  break;
+          //}
 
           // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          auto my_player_info_packet =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
-
-          auto other_player_info_packet = reinterpret_cast<InfoType*>(
-              std::next(recv_buff.data(), kInfoPacketSize + kInfoHeaderSize));
-
           auto player_infoes =
-              new PlayerInfoMSG{.my_player = *my_player_info_packet,
-                                .other_player = *other_player_info_packet};
+              new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
+                                .other_player = packet_ptr->otherInfo};
+          player_infoes->bullets.reserve(bullets_size);
+          player_infoes->bullets.append_range(bullet_range);
 
           // 윈도우로 보내기
           ::PostMessage(window_handle, WM_NETWORK_INFORM,
@@ -366,18 +377,17 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                         reinterpret_cast<LPARAM>(player_infoes));
 
 #ifndef NDEBUG
-          std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
-                       return_value, my_player_info_packet->x,
-                       my_player_info_packet->y, other_player_info_packet->x,
-                       other_player_info_packet->y);
+          std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}");
           wow.emit();
 #endif  // !NDEBUG
 
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize * 2),
-                      recved_buffer_size - kInfoPacketSize * 2);
-          recved_buffer_size -= kInfoPacketSize * 2;
+          // 버퍼 처리 - 다 받은걸로 생각하고 처리하는 상황이라 할 필요 없음
+          // std::memcpy(recv_buff.data(),
+          //            std::next(recv_buff.data(), kInfoPacketSize * 2),
+          //            recved_buffer_size - kInfoPacketSize * 2);
+          recved_buffer_size -= return_value;
+
+          unfinished = true;
           break;
         }
         case sendParam::PKT_CAT::CHANGE_MAP: {

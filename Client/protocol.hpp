@@ -8,7 +8,7 @@ struct Bullet;
 
 namespace game_protocol {
 
-std::string_view const g_server_address{"10.220.39.53"};
+std::string_view const g_server_address{"127.0.0.1"};
 int const g_server_port = 9000;
 
 // PACKET_CATEGORY
