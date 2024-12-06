@@ -272,6 +272,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   ShowWindow(hWnd, nCmdShow);
   UpdateWindow(hWnd);
 
+  // 총알 저장크기 지정
+  g_bullets.reserve(100);
+
   while (1) {
     if (PeekMessage(&Message, NULL, 0, 0, PM_REMOVE)) {
       if (Message.message == WM_QUIT) break;
@@ -343,7 +346,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
-          using PacketType = sendParam::recvParam_alt;
+          using PacketType = sendParam::sendParam_alt;
           using InfoType = sendParam::playerInfo;
 
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
@@ -351,11 +354,23 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
           auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
 
-          std::uint32_t bullets_size = (recved_buffer_size - kInfoPacketSize) /
-                                       sizeof(sendParam::Bullet);
+          std::int32_t bullets_size =
+              (recved_buffer_size - sizeof(sendParam::sendParam_alt)) /
+              sizeof(sendParam::Bullet);
+          // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
+          auto player_infoes =
+              new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
+                                .other_player = packet_ptr->otherInfo};
 
-          auto bullet_range = std::ranges::subrange{
-              packet_ptr->bullets, packet_ptr->bullets + bullets_size};
+          if (bullets_size > 0) {
+            sendParam::Bullet* bullet_init =
+                reinterpret_cast<sendParam::Bullet*>(
+                    std::next(recv_buff.data(), kInfoPacketSize));
+            auto bullet_range =
+                std::ranges::subrange{bullet_init, bullet_init + bullets_size};
+            player_infoes->bullets.reserve(bullet_range.size());
+            player_infoes->bullets.append_range(bullet_range);
+          }
 
           // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
           // if (kInfoPacketSize > recved_buffer_size) {
@@ -363,24 +378,17 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           //  break;
           //}
 
-          // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          auto player_infoes =
-              new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
-                                .other_player = packet_ptr->otherInfo};
-          player_infoes->bullets.reserve(bullet_range.size());
-          player_infoes->bullets.append_range(bullet_range);
-
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
                        recved_buffer_size, packet_ptr->myInfo.x,
                        packet_ptr->myInfo.y, packet_ptr->otherInfo.x,
                        packet_ptr->otherInfo.y);
 
-          std::print(wow, "bullet :");
-          for (auto& bullet : player_infoes->bullets) {
-            std::print(wow, "{:03} {:03}\t", bullet.x, bullet.y);
-          }
-          std::println(wow);
+          // std::print(wow, "bullet :");
+          // for (auto& bullet : player_infoes->bullets) {
+          //   std::print(wow, "{:03} {:03}\t", bullet.x, bullet.y);
+          // }
+          // std::println(wow);
           wow.emit();
 #endif  // !NDEBUG
 
@@ -621,14 +629,6 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       Update();
       // player1, 2와 아이템 충돌 확인
 
-      // MoveBullets();
-
-      // shootInterval++;
-      // if (shootInterval >= 120) {
-      //   ShootBullet();
-      //   shootInterval = 0;
-      // }
-
       for (auto& item : g_items) {
         if (item.interval <= 0)
           item.disable = false;
@@ -638,8 +638,16 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
 
       CheckItemPlayerCollisions(g_items, g_player);
       CheckItemPlayerCollisions(g_items, otherPlayer);
-      CheckPlayerBulletCollisions(g_bullets, g_player);
-      CheckPlayerBulletCollisions(g_bullets, otherPlayer);
+
+      // 서버에서 충돌처리 된 대로 총알 출력하는 것으로 결정
+      // CheckPlayerBulletCollisions(g_bullets, g_player);
+      // CheckPlayerBulletCollisions(g_bullets, otherPlayer);
+      // MoveBullets();
+      // shootInterval++;
+      // if (shootInterval >= 120) {
+      //   ShootBullet();
+      //   shootInterval = 0;
+      // }
 
       break;
     }
@@ -804,12 +812,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           g_player.face = player_infoes->my_player.face;
           otherPlayer.face = player_infoes->other_player.face;
 
-          g_bullets.clear();
+                    g_bullets.clear();
+          g_bullets.reserve(player_infoes->bullets.size());
 
           std::ranges::transform(
-              player_infoes->bullets, std::back_inserter(g_bullets.begin()),
-              [](sendParam::Bullet& a_bullet) -> Bullet {
-                return {.x = a_bullet.x, .y = a_bullet.y, .dx = 2, .dy = 0};
+              player_infoes->bullets, std::back_inserter(g_bullets),
+              [](sendParam::Bullet const& a_bullet) {
+                return Bullet{
+                    .x = a_bullet.x, .y = a_bullet.y, .dx = 0, .dy = 0};
               });
 
 #ifndef NDEBUG
