@@ -209,7 +209,6 @@ vector<Enemy> g_enemies;
 
 struct Bullet {
   int x, y;
-  int dx, dy;
 };
 vector<Bullet> g_bullets;
 
@@ -325,11 +324,13 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       case SOCKET_ERROR: {
         // 수신 문제
         err_display(" : recv error");
+        err_quit(" : recv error");
         return -1;
       }
       case 0: {
         // 접속 종료 시 처리
         err_display(" : disconnected");
+        err_quit(" : recv error");
         ::PostMessage(window_handle, WM_NETWORK_INFORM,
                       static_cast<std::int8_t>(100),  // 임시 코드
                       0);
@@ -373,10 +374,6 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           }
 
           // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
-          // if (kInfoPacketSize > recved_buffer_size) {
-          //  unfinished = false;
-          //  break;
-          //}
 
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
@@ -818,9 +815,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
           std::ranges::transform(
               player_infoes->bullets, std::back_inserter(g_bullets),
-              [](sendParam::Bullet const& a_bullet) {
-                return Bullet{
-                    .x = a_bullet.x, .y = a_bullet.y, .dx = 0, .dy = 0};
+              [](sendParam::Bullet const& a_bullet) -> /*??::*/Bullet {
+                return {.x = a_bullet.x, .y = a_bullet.y};
               });
 
 #ifndef NDEBUG
