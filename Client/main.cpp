@@ -326,13 +326,17 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       case 0: {
         // 접속 종료 시 처리
         err_display(" : disconnected");
+        ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                      static_cast<std::int8_t>(100),  // 임시 코드
+                      0);
         return -1;
       }
     }
+
     // 받은 데이터 크기 반영
     recved_buffer_size += return_value;
 
-    for (bool unfinished = true; unfinished;) {
+    for (bool finished = false; !finished;) {
       // 받은 데이터 처리
       using HeaderType = sendParam::PKT_CAT;
       auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
@@ -341,21 +345,16 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           using PacketType = sendParam::recvParam_alt;
           using InfoType = sendParam::playerInfo;
 
-          int constexpr kInfoSize = sizeof(InfoType);
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
-          int constexpr kFixedInfoSize = sizeof(InfoType) * 2;
-
           int constexpr kInfoPacketSize = sizeof(PacketType);
 
           auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
 
-          sendParam::Bullet* bullets = reinterpret_cast<sendParam::Bullet*>(
-              std::next(recv_buff.data(), kInfoPacketSize));
           std::uint32_t bullets_size = (recved_buffer_size - kInfoPacketSize) /
                                        sizeof(sendParam::Bullet);
 
-          auto bullet_range =
-              std::ranges::subrange(bullets, bullets + bullets_size);
+          auto bullet_range = std::ranges::subrange{
+              packet_ptr->bullets, packet_ptr->bullets + bullets_size};
 
           // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
           // if (kInfoPacketSize > recved_buffer_size) {
@@ -367,21 +366,27 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           auto player_infoes =
               new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
                                 .other_player = packet_ptr->otherInfo};
-          player_infoes->bullets.reserve(bullets_size);
+          player_infoes->bullets.reserve(bullet_range.size());
           player_infoes->bullets.append_range(bullet_range);
-
-          // 윈도우로 보내기
-          ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                        static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
-                        reinterpret_cast<LPARAM>(player_infoes));
 
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
                        recved_buffer_size, packet_ptr->myInfo.x,
                        packet_ptr->myInfo.y, packet_ptr->otherInfo.x,
                        packet_ptr->otherInfo.y);
+
+          std::print(wow, "bullet :");
+          for (auto& bullet : player_infoes->bullets) {
+            std::print(wow, "{:03} {:03}\t", bullet.x, bullet.y);
+          }
+          std::println(wow);
           wow.emit();
 #endif  // !NDEBUG
+
+          // 윈도우로 보내기
+          ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                        static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
+                        reinterpret_cast<LPARAM>(player_infoes));
 
           // 버퍼 처리 - 다 받은걸로 생각하고 처리하는 상황이라 할 필요 없음
           // std::memcpy(recv_buff.data(),
@@ -389,7 +394,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           //            recved_buffer_size - kInfoPacketSize * 2);
           recved_buffer_size -= return_value;
 
-          unfinished = true;
+          finished = true;
           break;
         }
         case sendParam::PKT_CAT::CHANGE_MAP: {
@@ -400,7 +405,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
           // 데이터 다 받았는지 확인
           if (kInfoPacketSize > recved_buffer_size) {
-            unfinished = false;
+            finished = true;
             break;
           }
 
@@ -425,10 +430,13 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                       std::next(recv_buff.data(), kInfoPacketSize),
                       recved_buffer_size - kInfoPacketSize);
           recved_buffer_size -= kInfoPacketSize;
+
+          finished = true;
           break;
         }
         default: {
           err_display(" : recv buffer handle error");
+          finished = true;
           break;
         }
       }
