@@ -312,7 +312,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   delete reinterpret_cast<RecvClientParam*>(lp_param);
 
   int return_value{};
-  int constexpr BUFF_SIZE = 100;
+  int constexpr BUFF_SIZE = 500;
   std::array<char, BUFF_SIZE> recv_buff{};
   int recved_buffer_size{};
 
@@ -408,10 +408,11 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
         }
         case sendParam::PKT_CAT::CHANGE_MAP: {
           using InfoType = std::int32_t;
+          using PacketType = sendParam::MapInfoPacket;
 
           int constexpr kInfoSize = sizeof(InfoType);
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
-          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+          int constexpr kInfoPacketSize = sizeof(PacketType);
           // 데이터 다 받았는지 확인
           if (kInfoPacketSize > recved_buffer_size) {
             finished = true;
@@ -420,7 +421,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
           // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
           auto map_num_info =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+              reinterpret_cast<PacketType*>(recv_buff.data())->info.mapNum;
 
           // 윈도우로 보내기
           ::PostMessage(
@@ -430,7 +431,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
 #ifndef NDEBUG
           std::println(wow, "MapInfo recv  {} = {}", return_value,
-                       *map_num_info);
+                       map_num_info);
           wow.emit();
 #endif  // !NDEBUG
 
@@ -812,7 +813,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           g_player.face = player_infoes->my_player.face;
           otherPlayer.face = player_infoes->other_player.face;
 
-                    g_bullets.clear();
+          g_bullets.clear();
           g_bullets.reserve(player_infoes->bullets.size());
 
           std::ranges::transform(
