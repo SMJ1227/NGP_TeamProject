@@ -816,13 +816,13 @@ void movePlayer(int matchNum) {
   newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
   newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
 
-  bool isVerticalCollision =
+  /*bool*/ isVerticalCollision =
       IsColliding(matchNum, g_matches[matchNum].player2.x, newY);
-  bool isHorizontalCollision =
+  /*bool*/ isHorizontalCollision =
       IsColliding(matchNum, newX, g_matches[matchNum].player2.y);
-  bool isSlopeGoRightCollision = IsSlopeGoRightColliding(
+  /*bool*/ isSlopeGoRightCollision = IsSlopeGoRightColliding(
       matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
-  bool isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
+  /*bool*/ isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
       matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
 
   // 수직 충돌 처리

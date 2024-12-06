@@ -1,45 +1,81 @@
 //
 // Created by sang hyeon, son
 //
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <print>
 #include <string_view>
 #include <syncstream>
 #include <thread>
+#include <vector>
 
 #include "../Client/network_util.hpp"
+#include "../Client/protocol.hpp"
 #include "../Server/sendParam.hpp"
 
 namespace server_mock {
 int constexpr BUF_SIZE = 100;
 int constexpr SERVER_PORT = 9000;
 
+namespace server_types {
+struct Bullet {
+  int x, y;
+};
+}  // namespace server_types
+
+std::vector server_local_bullets{server_types::Bullet{1, 4}, {2, 5}, {3, 4}};
+
 int send_player_info(SOCKET player_1_sock) {
   using HeaderType = sendParam::PKT_CAT;
-  using InfoType = sendParam::sendParam;
-  auto constexpr info_size = sizeof(HeaderType);
-  auto constexpr header_size = sizeof(InfoType);
-  auto constexpr packet_size = header_size + info_size;
+  using InfoType = sendParam::playerInfo;
+  using PacketType = sendParam::sendParam_alt;
 
-  std::array<char, packet_size * 2> buf{};
-  auto temp_player_1_info = InfoType{
+  auto constexpr info_size = sizeof(InfoType);
+  auto constexpr header_size = sizeof(HeaderType);
+
+  std::array<char, BUF_SIZE> buf{};
+
+  std::vector<sendParam::Bullet> send_bullets;
+  send_bullets.reserve(server_local_bullets.size());
+
+  // // 타입이 달라서 직접 변환이 안됨, 한쪽 타입에 맞추면 사용
+  // std::ranges::copy(server_local_bullets, send_bullets.begin());
+
+  std::ranges::transform(
+      server_local_bullets, std::back_inserter(send_bullets),
+      [](auto &pos) -> sendParam::Bullet { return {.x = pos.x, .y = pos.y}; });
+
+  auto p1info = InfoType{
       .x = 10,
       .y = 15,
       .acting = 1,
       .face = true,
   };
 
-  auto temp_player_2_info = InfoType{
+  auto p2info = InfoType{
       .x = 3,
       .y = 10,
       .acting = 1,
       .face = false,
   };
 
-  std::size_t packet_size = p_size * 2;
-  std::memcpy(buf.data(), &temp_player_1_info, p_size);
-  std::memcpy(std::next(buf.data(), p_size), &temp_player_2_info, p_size);
+  PacketType packet_smaple{.myInfo = p1info, .otherInfo = p2info};
+
+  // 보낼 길이 계산용
+  std::size_t packet_size{};
+
+  // 고정길이 복사
+  std::memcpy(buf.data(), &packet_smaple, sizeof(PacketType));
+  packet_size += sizeof(PacketType);
+
+  // 가변길이 복사
+  auto bullets_byte_size =
+      send_bullets.size() * sizeof(decltype(send_bullets)::value_type);
+  std::memcpy(std::next(buf.data(), packet_size), send_bullets.data(),
+              bullets_byte_size);
+  packet_size += bullets_byte_size;
+
   return send(player_1_sock, buf.data(), packet_size, 0);
 }
 

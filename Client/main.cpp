@@ -297,7 +297,8 @@ struct RecvClientParam {
   HWND window_handle;
 };
 struct PlayerInfoMSG {
-  sendParam::sendParam my_player, other_player;
+  sendParam::playerInfo my_player, other_player;
+  std::vector<sendParam::Bullet> bullets;
 };
 
 DWORD WINAPI RecvClient(LPVOID lp_param) {
@@ -325,56 +326,75 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       case 0: {
         // 접속 종료 시 처리
         err_display(" : disconnected");
+        ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                      static_cast<std::int8_t>(100),  // 임시 코드
+                      0);
         return -1;
       }
     }
+
     // 받은 데이터 크기 반영
     recved_buffer_size += return_value;
 
-    for (bool unfinished = true; unfinished;) {
+    for (bool finished = false; !finished;) {
       // 받은 데이터 처리
       using HeaderType = sendParam::PKT_CAT;
-      HeaderType* header = reinterpret_cast<HeaderType*>(recv_buff.data());
+      auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
-          using InfoType = sendParam::sendParam;
+          using PacketType = sendParam::recvParam_alt;
+          using InfoType = sendParam::playerInfo;
 
-          int constexpr kInfoSize = sizeof(InfoType);
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
-          int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
+          int constexpr kInfoPacketSize = sizeof(PacketType);
 
-          // 데이터를 다 받았는지 확인
-          if (kInfoPacketSize * 2 > recved_buffer_size) {
-            unfinished = false;
-            break;
-          }
+          auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
+
+          std::uint32_t bullets_size = (recved_buffer_size - kInfoPacketSize) /
+                                       sizeof(sendParam::Bullet);
+
+          auto bullet_range = std::ranges::subrange{
+              packet_ptr->bullets, packet_ptr->bullets + bullets_size};
+
+          // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
+          // if (kInfoPacketSize > recved_buffer_size) {
+          //  unfinished = false;
+          //  break;
+          //}
 
           // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
-          InfoType* my_player_info_packet =
-              reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
+          auto player_infoes =
+              new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
+                                .other_player = packet_ptr->otherInfo};
+          player_infoes->bullets.reserve(bullet_range.size());
+          player_infoes->bullets.append_range(bullet_range);
 
-          InfoType* other_player_info_packet = reinterpret_cast<InfoType*>(
-              std::next(recv_buff.data(), kInfoPacketSize + kInfoHeaderSize));
-
-          PlayerInfoMSG* player_infoes =
-              new PlayerInfoMSG{.my_player = *my_player_info_packet,
-                                .other_player = *other_player_info_packet};
-          {
-            // 윈도우로 보내기
-            ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                          static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
-                          reinterpret_cast<LPARAM>(player_infoes));
-          }
 #ifndef NDEBUG
-          std::println(wow, "PLAYER_INFO recv  {} = ", return_value);
+          std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
+                       recved_buffer_size, packet_ptr->myInfo.x,
+                       packet_ptr->myInfo.y, packet_ptr->otherInfo.x,
+                       packet_ptr->otherInfo.y);
+
+          std::print(wow, "bullet :");
+          for (auto& bullet : player_infoes->bullets) {
+            std::print(wow, "{:03} {:03}\t", bullet.x, bullet.y);
+          }
+          std::println(wow);
           wow.emit();
 #endif  // !NDEBUG
 
-          // 버퍼 처리
-          std::memcpy(recv_buff.data(),
-                      std::next(recv_buff.data(), kInfoPacketSize * 2),
-                      recved_buffer_size - kInfoPacketSize * 2);
-          recved_buffer_size -= kInfoPacketSize * 2;
+          // 윈도우로 보내기
+          ::PostMessage(window_handle, WM_NETWORK_INFORM,
+                        static_cast<std::int8_t>(HeaderType::PLAYER_INFO),
+                        reinterpret_cast<LPARAM>(player_infoes));
+
+          // 버퍼 처리 - 다 받은걸로 생각하고 처리하는 상황이라 할 필요 없음
+          // std::memcpy(recv_buff.data(),
+          //            std::next(recv_buff.data(), kInfoPacketSize * 2),
+          //            recved_buffer_size - kInfoPacketSize * 2);
+          recved_buffer_size -= return_value;
+
+          finished = true;
           break;
         }
         case sendParam::PKT_CAT::CHANGE_MAP: {
@@ -385,12 +405,12 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
           int constexpr kInfoPacketSize = kInfoHeaderSize + kInfoSize;
           // 데이터 다 받았는지 확인
           if (kInfoPacketSize > recved_buffer_size) {
-            unfinished = false;
+            finished = true;
             break;
           }
 
           // 메세지로 보낼 정보 구조체 할당 받고 받은 데이터 읽기
-          InfoType* map_num_info =
+          auto map_num_info =
               reinterpret_cast<InfoType*>(recv_buff.data() + kInfoHeaderSize);
 
           // 윈도우로 보내기
@@ -410,10 +430,13 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                       std::next(recv_buff.data(), kInfoPacketSize),
                       recved_buffer_size - kInfoPacketSize);
           recved_buffer_size -= kInfoPacketSize;
+
+          finished = true;
           break;
         }
         default: {
           err_display(" : recv buffer handle error");
+          finished = true;
           break;
         }
       }
@@ -605,8 +628,10 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       }
 
       for (auto& item : g_items) {
-        if (item.interval <= 0) item.disable = false;
-        else item.interval--;
+        if (item.interval <= 0)
+          item.disable = false;
+        else
+          item.interval--;
       }
 
       CheckItemPlayerCollisions(g_items, g_player);
@@ -692,8 +717,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
-        // spriteHeight);       // 플레이어2 출력
+        DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
+                   spriteHeight);  // 플레이어2 출력
         DrawItem(mDC);
       } else if (map_num == 2) {
         DrawDesertBg(mDC);
@@ -701,8 +726,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
-        // spriteHeight);
+        DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
+                   spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 3) {
         DrawForestBg(mDC);
@@ -710,8 +735,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         DrawEnemies(mDC);
         DrawBullets(mDC);
         DrawSprite(mDC, g_player, spriteX, spriteY, spriteWidth, spriteHeight);
-        // DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
-        // spriteHeight);
+        DrawSprite(mDC, otherPlayer, spriteX2, spriteY2, spriteWidth,
+                   spriteHeight);
         DrawItem(mDC);
       } else if (map_num == 4) {
         endImage.Draw(mDC, BOARD_WIDTH - GRID * 13, BOARD_HEIGHT - GRID * 17,
@@ -1188,7 +1213,8 @@ void Update() {
   // 없어보임
   // 2. 각 플레이어 전용 스프라이트 오프셋 두 개
   // 플레이어1의 스프라이트 오프셋 업데이트
-  // acting 0: idle, 1: walking, 2: charging, 3: chargedfull, 4: jumping, 5: falling, 6: sliding
+  // acting 0: idle, 1: walking, 2: charging, 3: chargedfull, 4: jumping, 5:
+  // falling, 6: sliding
   if (g_player.acting == '1') {  // 걷기 스프라이트
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
@@ -1201,9 +1227,8 @@ void Update() {
     spriteX = 0;
     spriteY = 116;
     spriteHeight = 22;
-    
-  }
-  else if (g_player.acting == '3') {
+
+  } else if (g_player.acting == '3') {
     spriteX = 30;
     spriteY = 116;
     spriteHeight = 22;
@@ -1233,7 +1258,7 @@ void Update() {
     spriteHeight = 25;
   }
 
-  else if(g_player.acting == '0'){
+  else if (g_player.acting == '0') {
     if ((spriteX += spriteWidth) > 230) {
       spriteX = 0;
     }
@@ -1286,7 +1311,7 @@ void Update() {
     spriteHeight2 = 25;
   }
 
-  else if (otherPlayer.acting == '0'){
+  else if (otherPlayer.acting == '0') {
     if ((spriteX2 += spriteWidth) > 230) {
       spriteX2 = 0;
     }
@@ -1299,8 +1324,8 @@ void CheckItemPlayerCollisions(vector<Item>& items, const Player& player) {
   for (auto it = items.begin(); it != items.end();) {
     if (player.x >= it->x * GRID && player.x <= (it->x + 1) * GRID &&
         player.y >= it->y * GRID && player.y <= (it->y + 1) * GRID) {
-        it->disable = true;
-        it->interval = 60;
+      it->disable = true;
+      it->interval = 60;
     }
     ++it;
   }
@@ -1329,12 +1354,11 @@ void MoveBullets() {
   }
 }
 
-void CheckPlayerBulletCollisions(vector<Bullet>& bullets, const Player& player) {
+void CheckPlayerBulletCollisions(vector<Bullet>& bullets,
+                                 const Player& player) {
   for (auto it = bullets.begin(); it != bullets.end();) {
-    if (it->x >= player.x - PLAYER_SIZE &&
-        it->x <= player.x + PLAYER_SIZE &&
-        it->y >= player.y - PLAYER_SIZE &&
-        it->y <= player.y + PLAYER_SIZE) {
+    if (it->x >= player.x - PLAYER_SIZE && it->x <= player.x + PLAYER_SIZE &&
+        it->y >= player.y - PLAYER_SIZE && it->y <= player.y + PLAYER_SIZE) {
       it = bullets.erase(it);
     } else {
       ++it;
