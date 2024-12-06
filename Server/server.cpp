@@ -330,10 +330,10 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         }
         memcpy(sendBuf, &sendParam, sizeof(sendParam));
         // g_bullets 데이터 추가 직렬화
-        size_t offset = sizeof(sendParam.header) + sizeof(sendParam.myInfo) + sizeof(sendParam.otherInfo);  // sendParam 크기
+        size_t offset = sizeof(sendParam);  // sendParam 크기
         size_t bulletDataSize =
             g_matches[matchNum].g_bullets.size() *
-            sizeof(g_matches[matchNum].g_bullets[0]);  // 원래 불렛 크기
+            sizeof(sendParam::Bullet);  // 원래 불렛 크기
         if (!g_matches[matchNum].g_bullets.empty()) {
           memcpy(sendBuf + offset, g_matches[matchNum].g_bullets.data(), bulletDataSize);  // 불렛들을 바로 보냄
         }
@@ -341,7 +341,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         if (retval == SOCKET_ERROR) {
           printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
         } else {
-          // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
+          printf("client %d send: %d byte\n", i, retval);
         }
       } 
       else {
