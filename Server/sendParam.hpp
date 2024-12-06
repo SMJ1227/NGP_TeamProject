@@ -24,7 +24,6 @@ typedef struct sendParam {
   PacketHeader header{.header = 1};	
   playerInfo myInfo;
   playerInfo otherInfo;
-  std::vector<Bullet> g_bullets;
 };
 
  struct MapInfo {

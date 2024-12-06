@@ -319,21 +319,17 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
           sendParam.myInfo = g_matches[matchNum].SPlayer2;
           sendParam.otherInfo = g_matches[matchNum].SPlayer1;
         }
-        sendParam.g_bullets.resize(g_matches[matchNum].g_bullets.size());
-        std::copy(g_matches[matchNum].g_bullets.begin(),
-                  g_matches[matchNum].g_bullets.end(),
-                  sendParam.g_bullets.begin());
-        memcpy(sendBuf, &sendParam.header, sizeof(sendParam.header));
-        memcpy(sendBuf + sizeof(sendParam.header), &sendParam.myInfo, sizeof(sendParam.myInfo));
-        memcpy(sendBuf + sizeof(sendParam.header) + sizeof(sendParam.myInfo), &sendParam.otherInfo, sizeof(sendParam.otherInfo));
+        memcpy(sendBuf, &sendParam, sizeof(sendParam));
 
         // g_bullets 데이터 추가 직렬화
-        size_t offset = sizeof(sendParam.header) + sizeof(sendParam.myInfo) + sizeof(sendParam.otherInfo);
-        for (const auto& bullet : sendParam.g_bullets) {
-          memcpy(sendBuf + offset, &bullet, sizeof(sendParam::Bullet));
-          offset += sizeof(sendParam::Bullet);
+        size_t offset = sizeof(sendParam.header) + sizeof(sendParam.myInfo) + sizeof(sendParam.otherInfo);  // sendParam 크기
+        size_t bulletDataSize =
+            g_matches[matchNum].g_bullets.size() *
+            sizeof(g_matches[matchNum].g_bullets[0]);  // 원래 불렛 크기
+        if (!g_matches[matchNum].g_bullets.empty()) {
+          memcpy(sendBuf + offset, g_matches[matchNum].g_bullets.data(), bulletDataSize);  // 불렛들을 바로 보냄
         }
-        int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        int retval = send(g_matches[matchNum].client_sock[i], sendBuf, offset + bulletDataSize, 0);
         if (retval == SOCKET_ERROR) {
           printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
         } else {
