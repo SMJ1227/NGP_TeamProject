@@ -6,6 +6,7 @@
 //
 #include <windows.h>
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <iostream>
@@ -620,12 +621,13 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       Update();
       // player1, 2와 아이템 충돌 확인
 
-      MoveBullets();
-      shootInterval++;
-      if (shootInterval >= 120) {
-        ShootBullet();
-        shootInterval = 0;
-      }
+      // MoveBullets();
+
+      // shootInterval++;
+      // if (shootInterval >= 120) {
+      //   ShootBullet();
+      //   shootInterval = 0;
+      // }
 
       for (auto& item : g_items) {
         if (item.interval <= 0)
@@ -801,6 +803,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
           g_player.face = player_infoes->my_player.face;
           otherPlayer.face = player_infoes->other_player.face;
+
+          g_bullets.clear();
+
+          std::ranges::transform(
+              player_infoes->bullets, std::back_inserter(g_bullets.begin()),
+              [](sendParam::Bullet& a_bullet) -> Bullet {
+                return {.x = a_bullet.x, .y = a_bullet.y, .dx = 2, .dy = 0};
+              });
 
 #ifndef NDEBUG
           std::println(
