@@ -92,7 +92,7 @@ void applyGravity(int matchNum);
 bool IsColliding(int matchNum, int x, int y);
 bool IsSlopeGoRightColliding(int matchNum, int x, int y);
 bool IsSlopeGoLeftColliding(int matchNum, int x, int y);
-bool IsNextColliding(int matchNum);
+int IsNextColliding(int matchNum);
 void movePlayer(int matchNum);
 void moveBullets(int matchNum);
 // 오브젝트 충돌처리
@@ -102,6 +102,9 @@ void CheckItemPlayerCollisions(int matchNum);
 void CheckPlayerBulletCollisions(int matchNum);
 void CheckPlayersCollisions(int matchNum);
 void updateSendParam(int matchNum);
+
+// bullet -> senparam::bullet 복사 함수?
+void copyBullet() {}
 
 // 매치를 삭제하는 함수
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
@@ -265,10 +268,11 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     updatePlayerD(matchNum);
     applyGravity(matchNum);
     movePlayer(matchNum);
-    if (IsNextColliding(matchNum)) {
+    if (int isNext = IsNextColliding(matchNum)) {  // 1(p1), 2(p2)를 리턴하면 조건문 진입
       if (g_matches[matchNum].mapNum == 1) {
         InitMap(matchNum, map1);
-      } else if (g_matches[matchNum].mapNum == 2) {
+      } 
+      else if (g_matches[matchNum].mapNum == 2) {
         InitMap(matchNum, map2);
       }
       DeleteAllEnemies(matchNum);
@@ -277,9 +281,14 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       initPlayer(matchNum);
       initEnemy(matchNum);
       initItem(matchNum);
-      g_matches[matchNum].score++;  // 추후 수정
+      // p1이 이기면 score--, p2가 이기면 score++
+      if (isNext == 1)
+        g_matches[matchNum].score--;
+      else if (isNext == 2)
+        g_matches[matchNum].score++;
+      // 추후 수정
       g_matches[matchNum].header = true;
-    } 
+}
     else {
       moveBullets(matchNum);
       g_matches[matchNum].shootInterval++;
@@ -320,7 +329,6 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
           sendParam.otherInfo = g_matches[matchNum].SPlayer1;
         }
         memcpy(sendBuf, &sendParam, sizeof(sendParam));
-
         // g_bullets 데이터 추가 직렬화
         size_t offset = sizeof(sendParam.header) + sizeof(sendParam.myInfo) + sizeof(sendParam.otherInfo);  // sendParam 크기
         size_t bulletDataSize =
@@ -715,7 +723,10 @@ bool IsSlopeGoLeftColliding(int matchNum, int x, int y) {
   return false;
 }
 
-bool IsNextColliding(int matchNum) {    // p1인지 p2인지 알기 위해 bool보단 리턴타입을 정수로 리턴하도록 바꾸기
+// 정수타입 리턴
+// 0: 충돌하지 않음, 1: p1과 충돌, 2: p2와 충돌
+int IsNextColliding(int matchNum) {  // p1인지 p2인지 알기 위해 bool보단
+                                     // 리턴타입을 정수로 리턴하도록 바꾸기
   int leftX = (g_matches[matchNum].player1.x - PLAYER_SIZE / 2) / GRID;
   int rightX = (g_matches[matchNum].player1.x + PLAYER_SIZE / 2 - 1) / GRID;
   int topY = (g_matches[matchNum].player1.y - PLAYER_SIZE / 2) / GRID;
@@ -723,9 +734,20 @@ bool IsNextColliding(int matchNum) {    // p1인지 p2인지 알기 위해 bool�
 
   if (g_matches[matchNum].map[topY][leftX] == 6 ||
       g_matches[matchNum].map[topY][rightX] == 6) {
-    return true;
+    return 1;
   }
-  return false;
+
+  leftX = (g_matches[matchNum].player2.x - PLAYER_SIZE / 2) / GRID;
+  rightX = (g_matches[matchNum].player2.x + PLAYER_SIZE / 2 - 1) / GRID;
+  topY = (g_matches[matchNum].player2.y - PLAYER_SIZE / 2) / GRID;
+  bottomY = (g_matches[matchNum].player2.y + PLAYER_SIZE / 2 - 1) / GRID;
+
+  if (g_matches[matchNum].map[topY][leftX] == 6 ||
+      g_matches[matchNum].map[topY][rightX] == 6) {
+    return 2;
+  }
+
+  return 0;
 }
 
 void movePlayer(int matchNum) {
