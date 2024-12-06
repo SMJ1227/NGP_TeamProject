@@ -231,7 +231,7 @@ void GenerateEnemy(int x, int y);
 void DrawEnemies(HDC hDC);
 void DeleteAllEnemies();
 void DrawBullets(HDC hDC);
-void DeleteAllBullets();
+
 void CheckItemPlayerCollisions(vector<Item>& items, const Player& player);
 void ShootBullet();
 void MoveBullets();
@@ -689,7 +689,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           InitPlayer(g_player);
           InitPlayer(otherPlayer);
           DeleteAllEnemies();
-          DeleteAllBullets();
+
           DeleteAllItems();
           InitEnemy(map);
           InitItems(map);
@@ -808,7 +808,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
           std::ranges::transform(
               player_infoes->bullets, std::back_inserter(g_bullets),
-              [](sendParam::Bullet const& a_bullet) -> /*??::*/Bullet {
+              [](sendParam::Bullet const& a_bullet) -> /*??::*/ Bullet {
                 return {.x = a_bullet.x, .y = a_bullet.y};
               });
 
@@ -843,7 +843,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 InitPlayer(g_player);
                 InitPlayer(otherPlayer);
                 DeleteAllEnemies();
-                DeleteAllBullets();
+
                 DeleteAllItems();
                 InitEnemy(map);
                 InitItems(map);
@@ -854,7 +854,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 InitPlayer(g_player);
                 InitPlayer(otherPlayer);
                 DeleteAllEnemies();
-                DeleteAllBullets();
                 DeleteAllItems();
                 InitEnemy(map);
                 InitItems(map);
@@ -865,7 +864,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 InitPlayer(g_player);
                 InitPlayer(otherPlayer);
                 DeleteAllEnemies();
-                DeleteAllBullets();
                 DeleteAllItems();
                 InitEnemy(map);
                 InitItems(map);
@@ -1215,21 +1213,11 @@ void DrawBullets(HDC hdc) {
   DeleteObject(hBrush);
 }
 
-void DeleteAllBullets() { g_bullets.clear(); }
-
 // recv받은 데이터로 출력 정보 업데이트, 수신 버퍼로 전달받은 데이터 해석
 void Update() {
   for (auto& item : g_items) {
     // item의 disable을 전달받은 disable로 업데이트
   }
-  // 맵 변경을 전달받으면 출력 정보 초기화    ex) if(header == 2)
-  /*
-  InitPlayer();
-  DeleteAllEnemies();
-  DeleteAllBullets();
-  DeleteAllItems();
-  InitEnemy(map);
-  InitItems(map);*/
 
   if (map_num == 4 /*|| 게임 종료(연결 끊김)*/) {
     // 4번째 맵 또는 게임 종료를 전달받으면 종료시 필요한 정보로 업데이트
@@ -1358,29 +1346,6 @@ void CheckItemPlayerCollisions(vector<Item>& items, const Player& player) {
       it->interval = 60;
     }
     ++it;
-  }
-}
-
-void ShootBullet() {
-  for (const auto& enemy : g_enemies) {
-    Bullet newBullet;
-    newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
-    newBullet.y = enemy.y * GRID + GRID / 2;
-    newBullet.dx = 2;
-    newBullet.dy = 0;
-    g_bullets.push_back(newBullet);
-  }
-}
-
-void MoveBullets() {
-  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
-    it->x += it->dx;
-    it->y += it->dy;
-    if (it->x < 0 || it->x > BOARD_WIDTH) {
-      it = g_bullets.erase(it);
-    } else {
-      ++it;
-    }
   }
 }
 
