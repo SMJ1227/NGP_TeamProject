@@ -281,14 +281,14 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       initPlayer(matchNum);
       initEnemy(matchNum);
       initItem(matchNum);
-      // p1이 이기면 score--, p2가 이기면 score++
+      // p1이 이기면 score+=10, p2가 이기면 score+=1
       if (isNext == 1)
-        g_matches[matchNum].score--;
+        g_matches[matchNum].score+=10;
       else if (isNext == 2)
-        g_matches[matchNum].score++;
+        g_matches[matchNum].score+=1;
       // 추후 수정
       g_matches[matchNum].header = true;
-}
+    }
     else {
       moveBullets(matchNum);
       g_matches[matchNum].shootInterval++;
@@ -319,6 +319,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       }
       if (!g_matches[matchNum].header) {    // playerinfo
         sendParam::sendParam sendParam;
+        //sendSize = sendParam::sendParam;
         // sendParam.header.header = static_cast<std::int8_t>(sendParam::PKT_CAT::PLAYER_INFO);
         if (i == 0) {
           sendParam.myInfo = g_matches[matchNum].SPlayer1;
@@ -334,6 +335,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         size_t bulletDataSize =
             g_matches[matchNum].g_bullets.size() *
             sizeof(sendParam::Bullet);  // 원래 불렛 크기
+        //sendSize += bulletDataSize
         if (!g_matches[matchNum].g_bullets.empty()) {
           memcpy(sendBuf + offset, g_matches[matchNum].g_bullets.data(), bulletDataSize);  // 불렛들을 바로 보냄
         }
@@ -346,8 +348,9 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       } 
       else {
         sendParam::MapInfoPacket mapInfoPacket;
+        sendSize = sizeof(sendParam::MapInfoPacket);
         mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
-        memcpy(sendBuf, &mapInfoPacket, sizeof(sendParam::MapInfoPacket));
+        memcpy(sendBuf, &mapInfoPacket, sendSize);
         int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
         if (retval == SOCKET_ERROR) {
           printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
