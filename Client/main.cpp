@@ -317,16 +317,16 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   int recved_buffer_size{};
 
   while (true) {
-    // 데이터 받기
-    return_value =
-        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size() - recved_buffer_size, 0);
+        // 데이터 받기
+        return_value =
+            recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
+                 recv_buff.size() - recved_buffer_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
-        // 수신 문제
-        err_display(" : recv error");
-        return -1;
-      }
+            // 수신 문제
+            err_display(" : recv error");
+            return -1;
+        }
       case 0: {
         // 접속 종료 시 처리
         err_display(" : disconnected");
