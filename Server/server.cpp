@@ -52,6 +52,7 @@ typedef struct MATCH {
   SOCKET client_sock[2]{NULL, NULL};
   HANDLE recvThread[2]{NULL, NULL};
   HANDLE timerThread;
+  HANDLE hEvent;
   Player player1;
   sendParam::playerInfo SPlayer1;
   Player player2;
@@ -125,6 +126,23 @@ void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
   // -> 각 recv스레드에서 반복문이 시작될 때 자신의 매치 번호를 검사한다
 }
 
+void UpdateGameLogic(int matchNum) {}
+
+DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
+  int matchNum = *(int*)lpParam;
+  delete (int*)lpParam;
+
+  while (true) {
+    // recv 스레드에서 데이터 처리 준비 완료 신호 대기
+    WaitForSingleObject(g_matches[matchNum].hEvent, INFINITE);
+
+    EnterCriticalSection(&cs);
+    UpdateGameLogic(matchNum);  // 상태 업데이트 함수, 구현 필요
+    LeaveCriticalSection(&cs);
+  }
+  return 0;
+}
+
 
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
@@ -145,16 +163,11 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  printf("\n[TCP server] client connect: IP address=%s, port number=%d\n", addr,
-         ntohs(clientaddr.sin_port));
+  printf("\n[TCP server] client connect: IP address=%s, port number=%d\n", addr, ntohs(clientaddr.sin_port));
 
   while (1) {
-    // 다른 스레드 작동중 대기
-    WaitForSingleObject(hEvent, INFINITE);
-    ResetEvent(hEvent);
     // 벡터의 유효한 범위 내에서, 현재 매치의 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는지 비교한다, 다르다면 감소
-
     while (matchNum >= 0 && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
       // 디버그옹 출력
@@ -171,12 +184,10 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
       closeSocketFunc(client_sock, matchNum, playerNum);
-      SetEvent(hEvent);
       ExitThread(0);
       break;
     } else if (retval == 0) {
       //closeSocketFunc(client_sock, matchNum, playerNum);
-      SetEvent(hEvent);
       //ExitThread(0);
       break;
     }
@@ -220,13 +231,8 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
         g_matches[matchNum].p2 = input1;
       }
     }
-    if (retval == SOCKET_ERROR) {
-      err_display("send()");
-      SetEvent(hEvent);
-      break;
-    }
     // 이벤트 해제
-    SetEvent(hEvent);
+    SetEvent(g_matches[matchNum].hEvent);
   }
   // 소켓 닫기
   closesocket(client_sock);
@@ -410,7 +416,7 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     }
     g_matches[matchNum].header = false;
     // 이벤트 해제
-    SetEvent(hEvent);
+    SetEvent(g_matches[matchNum].hEvent);
     // 필요에 따라 타이머 중단 조건을 추가.
   }
 
@@ -477,8 +483,12 @@ int main(int argc, char* argv[]) {
     // 매치 생성
     if (g_matches.size() == 0 ||
         (!g_matches.empty() && g_matches.back().client_sock[0] != NULL &&
-         g_matches.back().client_sock[1] != NULL))
-      g_matches.push_back(MATCH());
+         g_matches.back().client_sock[1] != NULL)) {
+      //g_matches.push_back(MATCH());
+      MATCH newMatch;
+      newMatch.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // 이벤트 생성
+      g_matches.push_back(newMatch);
+    }
     // 플레이어1 스레드, 타이머 스레드 생성
     if (g_matches.back().client_sock[0] == NULL) {
       rParam->playerNum = 0;
@@ -513,8 +523,6 @@ int main(int argc, char* argv[]) {
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       initPlayer(*matchNumParam);
     }
-    // 이벤트 해제
-    SetEvent(hEvent);
   }
 
   // 소켓 닫기
