@@ -13,6 +13,7 @@
 
 CRITICAL_SECTION cs;
 HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+int deleteThreadNum = -1;
 
 typedef struct Player {
   int x, y;
@@ -103,9 +104,6 @@ void CheckPlayerBulletCollisions(int matchNum);
 void CheckPlayersCollisions(int matchNum);
 void updateSendParam(int matchNum);
 
-// bullet -> senparam::bullet 복사 함수?
-void copyBullet() {}
-
 // 매치를 삭제하는 함수
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
   // 디버그용 출력
@@ -122,9 +120,11 @@ void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
     g_matches[i].matchNum = i;
   }
 
+  deleteThreadNum = matchNum;
   // 바꾼 matchNum을 다른 스레드에도 적용시켜야함
   // -> 각 recv스레드에서 반복문이 시작될 때 자신의 매치 번호를 검사한다
 }
+
 
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
@@ -172,9 +172,12 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       err_display("recv()");
       closeSocketFunc(client_sock, matchNum, playerNum);
       SetEvent(hEvent);
+      ExitThread(0);
       break;
     } else if (retval == 0) {
+      //closeSocketFunc(client_sock, matchNum, playerNum);
       SetEvent(hEvent);
+      //ExitThread(0);
       break;
     }
 
@@ -217,7 +220,6 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
         g_matches[matchNum].p2 = input1;
       }
     }
-
     if (retval == SOCKET_ERROR) {
       err_display("send()");
       SetEvent(hEvent);
@@ -262,6 +264,13 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       printf("타이머 대기 실패 또는 중단: %d\n", GetLastError());
       break;
     }
+
+    EnterCriticalSection(&cs);
+    if (deleteThreadNum == matchNum) {
+      deleteThreadNum = -1;
+      ExitThread(0);
+    }
+    LeaveCriticalSection(&cs);
     // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는 지 비교한다, 다르다면 감소
     while (!(matchNum < 0) && matchNum < g_matches.size() &&
@@ -279,6 +288,12 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
     applyGravity(matchNum);
     movePlayer(matchNum);
     if (int isNext = IsNextColliding(matchNum)) {  // 1(p1), 2(p2)를 리턴하면 조건문 진입
+      // p1이 이기면 score+=10, p2가 이기면 score+=1
+      if (isNext == 1)
+        g_matches[matchNum].score += 10;
+      else if (isNext == 2)
+        g_matches[matchNum].score += 1;
+      // 추후 수정
       if (g_matches[matchNum].mapNum == 1) {
         g_matches[matchNum].mapNum = 2;
         InitMap(matchNum, map1);
@@ -287,19 +302,32 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
         g_matches[matchNum].mapNum = 3;
         InitMap(matchNum, map2);
       }
+   
+      // mapNum 3 -> 4 게임종료, ### mapNum == 4이면 게임 종료로 판단?
+      // 비정상 종료를 몰수승으로 판단하면 게임 종료 시에는 반드시 map_num = 4인
+      // 상태로 게임 종료
+      // -> CHANGE_MAP 패킷의 mapNum으로 게임 종료, 승 패를 알림
+      // 클라이언트에 보낼때는 5와 6을 나눠서 보냄, 5는승리, 6은 패배
+      // 서버 입장에서 5는 p1승, 6은 p2승
+      else if (g_matches[matchNum].mapNum == 3 &&
+               g_matches[matchNum].score >= 20) {
+        g_matches[matchNum].mapNum = 5;
+      }
+      else if (g_matches[matchNum].mapNum == 3 &&
+               g_matches[matchNum].score < 20) {
+        g_matches[matchNum].mapNum = 6;
+      }
+      //printf("이동한 맵 넘버: %d\n", g_matches[matchNum].mapNum);
+ 
       DeleteAllEnemies(matchNum);
       DeleteAllBullets(matchNum);
       DeleteAllItems(matchNum);
       initPlayer(matchNum);
       initEnemy(matchNum);
       initItem(matchNum);
-      // p1이 이기면 score+=10, p2가 이기면 score+=1
-      if (isNext == 1)
-        g_matches[matchNum].score+=10;
-      else if (isNext == 2)
-        g_matches[matchNum].score+=1;
-      // 추후 수정
-      g_matches[matchNum].header = true;
+      
+      g_matches[matchNum].header = true; 
+
     }
     else {
       moveBullets(matchNum);
@@ -360,7 +388,16 @@ DWORD WINAPI timerProcessClient(LPVOID lpParam) {
       else {
         sendParam::MapInfoPacket mapInfoPacket;
         sendSize = sizeof(sendParam::MapInfoPacket);
-        mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
+        // p1 승일때
+        if (g_matches[matchNum].mapNum == 5) {
+          if (i == 0) mapInfoPacket.info.mapNum = 5;
+          else if (i == 1) mapInfoPacket.info.mapNum = 6;
+        }// 수정
+        else if (g_matches[matchNum].mapNum == 6) {
+          if (i == 0) mapInfoPacket.info.mapNum = 6;
+          else if (i == 1) mapInfoPacket.info.mapNum = 5;
+        }
+        else mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
         memcpy(sendBuf, &mapInfoPacket, sendSize);
         int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
         if (retval == SOCKET_ERROR) {
