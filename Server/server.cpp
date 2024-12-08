@@ -22,7 +22,6 @@ typedef struct Player {
   bool isCharging = false;
   bool isJumping = false;
   bool isSliding = false;
-  bool slip = false;  // 미끄러지는 동안 계속 true
   bool face = 0;  // face: left, right
   bool EnhancedJumpPower = false;
   bool spaceKeyReleased = true;
@@ -52,6 +51,7 @@ typedef struct MATCH {
   SOCKET client_sock[2]{NULL, NULL};
   HANDLE recvThread[2]{NULL, NULL};
   HANDLE timerThread;
+  HANDLE loginThread;
   HANDLE hEvent;
   Player player1;
   sendParam::playerInfo SPlayer1;
@@ -126,7 +126,69 @@ void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
   // -> 각 recv스레드에서 반복문이 시작될 때 자신의 매치 번호를 검사한다
 }
 
-void UpdateGameLogic(int matchNum) {}
+void UpdateGameLogic(int matchNum) {
+  updatePlayerD(matchNum);
+  applyGravity(matchNum);
+  movePlayer(matchNum);
+  if (int isNext =
+          IsNextColliding(matchNum)) {  // 1(p1), 2(p2)를 리턴하면 조건문 진입
+    // p1이 이기면 score+=10, p2가 이기면 score+=1
+    if (isNext == 1)
+      g_matches[matchNum].score += 10;
+    else if (isNext == 2)
+      g_matches[matchNum].score += 1;
+    // 추후 수정
+    if (g_matches[matchNum].mapNum == 1) {
+      g_matches[matchNum].mapNum = 2;
+      InitMap(matchNum, map1);
+    } else if (g_matches[matchNum].mapNum == 2) {
+      g_matches[matchNum].mapNum = 3;
+      InitMap(matchNum, map2);
+    }
+
+    // mapNum 3 -> 4 게임종료, ### mapNum == 4이면 게임 종료로 판단?
+    // 비정상 종료를 몰수승으로 판단하면 게임 종료 시에는 반드시 map_num = 4인
+    // 상태로 게임 종료
+    // -> CHANGE_MAP 패킷의 mapNum으로 게임 종료, 승 패를 알림
+    // 클라이언트에 보낼때는 5와 6을 나눠서 보냄, 5는승리, 6은 패배
+    // 서버 입장에서 5는 p1승, 6은 p2승
+    else if (g_matches[matchNum].mapNum == 3 &&
+             g_matches[matchNum].score >= 20) {
+      g_matches[matchNum].mapNum = 5;
+    } else if (g_matches[matchNum].mapNum == 3 &&
+               g_matches[matchNum].score < 20) {
+      g_matches[matchNum].mapNum = 6;
+    }
+    // printf("이동한 맵 넘버: %d\n", g_matches[matchNum].mapNum);
+
+    DeleteAllEnemies(matchNum);
+    DeleteAllBullets(matchNum);
+    DeleteAllItems(matchNum);
+    initPlayer(matchNum);
+    initEnemy(matchNum);
+    initItem(matchNum);
+
+    g_matches[matchNum].header = true;
+
+  } 
+  else {
+    moveBullets(matchNum);
+    g_matches[matchNum].shootInterval++;
+    if (g_matches[matchNum].shootInterval > 120) {
+      ShootBullet(matchNum);
+      g_matches[matchNum].shootInterval = 0;
+    }
+    for (auto& item : g_matches[matchNum].g_items) {
+      if (item.interval <= 0) {
+        item.disable = false;
+      } else {
+        item.interval--;
+      }
+    }
+    CheckCollisions(matchNum);
+    updateSendParam(matchNum);
+  }
+}
 
 DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
   int matchNum = *(int*)lpParam;
@@ -137,12 +199,97 @@ DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
     WaitForSingleObject(g_matches[matchNum].hEvent, INFINITE);
 
     EnterCriticalSection(&cs);
+    if (deleteThreadNum == matchNum) {
+      deleteThreadNum = -1;
+      ExitThread(0);
+    }
+    LeaveCriticalSection(&cs);
+
+    while (!(matchNum < 0) && matchNum < g_matches.size() &&
+           g_matches[matchNum].matchNum != matchNum) {
+      // 디버그용 출력
+      printf(
+          "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
+          "않음, matchNum감소\n",
+          matchNum, g_matches[matchNum].matchNum);
+      matchNum--;
+    }
+
+    EnterCriticalSection(&cs);
     UpdateGameLogic(matchNum);  // 상태 업데이트 함수, 구현 필요
     LeaveCriticalSection(&cs);
+    // send 부분
+    char sendBuf[BUFSIZE];
+    int sendSize;
+
+    for (int i = 0; i < 2; ++i) {
+      if (g_matches[matchNum].client_sock[i] == NULL) {
+        // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
+        continue;
+      }
+      if (!g_matches[matchNum].header) {  // playerinfo
+        sendParam::sendParam sendParam;
+        sendSize = sizeof(sendParam::sendParam);
+        if (i == 0) {
+          sendParam.myInfo = g_matches[matchNum].SPlayer1;
+          sendParam.otherInfo = g_matches[matchNum].SPlayer2;
+
+        } else if (i == 1) {
+          sendParam.myInfo = g_matches[matchNum].SPlayer2;
+          sendParam.otherInfo = g_matches[matchNum].SPlayer1;
+        }
+        memcpy(sendBuf, &sendParam, sizeof(sendParam));
+        // g_bullets 데이터 추가 직렬화
+        size_t offset = sizeof(sendParam::sendParam);  // sendParam 크기
+        size_t bulletDataSize = g_matches[matchNum].g_bullets.size() *
+                                sizeof(sendParam::Bullet);  // 원래 불렛 크기
+        sendSize += bulletDataSize;
+        if (!g_matches[matchNum].g_bullets.empty()) {
+          memcpy(sendBuf + offset, g_matches[matchNum].g_bullets.data(),
+                 bulletDataSize);  // 불렛들을 바로 보냄
+        }
+        int retval =
+            send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        if (retval == SOCKET_ERROR) {
+          // printf("client %d fail: %d\n", i, WSAGetLastError());
+        } else {
+          // printf("client %d send: %d byte\n", i, retval);
+        }
+      } 
+      else {
+        sendParam::MapInfoPacket mapInfoPacket;
+        sendSize = sizeof(sendParam::MapInfoPacket);
+        // p1 승일때
+        if (g_matches[matchNum].mapNum == 5) {
+          if (i == 0)
+            mapInfoPacket.info.mapNum = 5;
+          else if (i == 1)
+            mapInfoPacket.info.mapNum = 6;
+        }  // 수정
+        else if (g_matches[matchNum].mapNum == 6) {
+          if (i == 0)
+            mapInfoPacket.info.mapNum = 6;
+          else if (i == 1)
+            mapInfoPacket.info.mapNum = 5;
+        } else
+          mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
+        memcpy(sendBuf, &mapInfoPacket, sendSize);
+        int retval =
+            send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        if (retval == SOCKET_ERROR) {
+          // printf("clien %d fail: %d\n", i, WSAGetLastError());
+        } else {
+          // printf("client %d send %d bute\n", i, retval);
+        }
+      }
+    }
+    g_matches[matchNum].header = false;
+    // 이벤트 해제
+    ResetEvent(g_matches[matchNum].hEvent);
   }
+  CloseHandle(g_matches[matchNum].hEvent);
   return 0;
 }
-
 
 // 클라이언트와 데이터 통신
 DWORD WINAPI RecvProcessClient(LPVOID arg) {
@@ -506,7 +653,7 @@ int main(int argc, char* argv[]) {
              1);
       // 타이머 스레드 생성
       g_matches.back().timerThread =
-          CreateThread(NULL, 0, timerProcessClient, matchNumParam, 0, NULL);
+          CreateThread(NULL, 0, GameLogicUpdateThread, matchNumParam, 0, NULL);
     }
     // 플레이어2 스레드 생성
 
