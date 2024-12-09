@@ -13,6 +13,7 @@
 
 CRITICAL_SECTION cs;
 HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+int deleteThreadNum = -1;
 
 typedef struct Player {
   int x, y;
@@ -21,7 +22,6 @@ typedef struct Player {
   bool isCharging = false;
   bool isJumping = false;
   bool isSliding = false;
-  bool slip = false;  // 미끄러지는 동안 계속 true
   bool face = 0;  // face: left, right
   bool EnhancedJumpPower = false;
   bool spaceKeyReleased = true;
@@ -50,7 +50,9 @@ struct recvParam {
 typedef struct MATCH {
   SOCKET client_sock[2]{NULL, NULL};
   HANDLE recvThread[2]{NULL, NULL};
-  HANDLE timerThread;
+  // HANDLE timerThread;
+  HANDLE logicThread;
+  HANDLE hEvent;
   Player player1;
   sendParam::playerInfo SPlayer1;
   Player player2;
@@ -103,9 +105,6 @@ void CheckPlayerBulletCollisions(int matchNum);
 void CheckPlayersCollisions(int matchNum);
 void updateSendParam(int matchNum);
 
-// bullet -> senparam::bullet 복사 함수?
-void copyBullet() {}
-
 // 매치를 삭제하는 함수
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
   // 디버그용 출력
@@ -122,8 +121,174 @@ void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
     g_matches[i].matchNum = i;
   }
 
+  deleteThreadNum = matchNum;
   // 바꾼 matchNum을 다른 스레드에도 적용시켜야함
   // -> 각 recv스레드에서 반복문이 시작될 때 자신의 매치 번호를 검사한다
+}
+
+void UpdateGameLogic(int matchNum) {
+  updatePlayerD(matchNum);
+  applyGravity(matchNum);
+  movePlayer(matchNum);
+  if (int isNext =
+          IsNextColliding(matchNum)) {  // 1(p1), 2(p2)를 리턴하면 조건문 진입
+    // p1이 이기면 score+=10, p2가 이기면 score+=1
+    if (isNext == 1)
+      g_matches[matchNum].score += 10;
+    else if (isNext == 2)
+      g_matches[matchNum].score += 1;
+    // 추후 수정
+    if (g_matches[matchNum].mapNum == 1) {
+      g_matches[matchNum].mapNum = 2;
+      InitMap(matchNum, map1);
+    } else if (g_matches[matchNum].mapNum == 2) {
+      g_matches[matchNum].mapNum = 3;
+      InitMap(matchNum, map2);
+    }
+
+    // mapNum 3 -> 4 게임종료, ### mapNum == 4이면 게임 종료로 판단?
+    // 비정상 종료를 몰수승으로 판단하면 게임 종료 시에는 반드시 map_num = 4인
+    // 상태로 게임 종료
+    // -> CHANGE_MAP 패킷의 mapNum으로 게임 종료, 승 패를 알림
+    // 클라이언트에 보낼때는 5와 6을 나눠서 보냄, 5는승리, 6은 패배
+    // 서버 입장에서 5는 p1승, 6은 p2승
+    else if (g_matches[matchNum].mapNum == 3 &&
+             g_matches[matchNum].score >= 20) {
+      g_matches[matchNum].mapNum = 5;
+    } else if (g_matches[matchNum].mapNum == 3 &&
+               g_matches[matchNum].score < 20) {
+      g_matches[matchNum].mapNum = 6;
+    }
+    // printf("이동한 맵 넘버: %d\n", g_matches[matchNum].mapNum);
+
+    DeleteAllEnemies(matchNum);
+    DeleteAllBullets(matchNum);
+    DeleteAllItems(matchNum);
+    initPlayer(matchNum);
+    initEnemy(matchNum);
+    initItem(matchNum);
+
+    g_matches[matchNum].header = true;
+
+  } 
+  else {
+    moveBullets(matchNum);
+    g_matches[matchNum].shootInterval++;
+    if (g_matches[matchNum].shootInterval > 120) {
+      ShootBullet(matchNum);
+      g_matches[matchNum].shootInterval = 0;
+    }
+    for (auto& item : g_matches[matchNum].g_items) {
+      if (item.interval <= 0) {
+        item.disable = false;
+      } else {
+        item.interval--;
+      }
+    }
+    CheckCollisions(matchNum);
+    updateSendParam(matchNum);
+  }
+}
+
+DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
+  int matchNum = *(int*)lpParam;
+  delete (int*)lpParam;
+
+  while (true) {
+    // recv 스레드에서 데이터 처리 준비 완료 신호 대기
+    WaitForSingleObject(g_matches[matchNum].hEvent, INFINITE);
+
+    EnterCriticalSection(&cs);
+    if (deleteThreadNum == matchNum) {
+      deleteThreadNum = -1;
+      ExitThread(0);
+    }
+    LeaveCriticalSection(&cs);
+
+    while (!(matchNum < 0) && matchNum < g_matches.size() &&
+           g_matches[matchNum].matchNum != matchNum) {
+      // 디버그용 출력
+      printf(
+          "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
+          "않음, matchNum감소\n",
+          matchNum, g_matches[matchNum].matchNum);
+      matchNum--;
+    }
+
+    EnterCriticalSection(&cs);
+    UpdateGameLogic(matchNum);
+    LeaveCriticalSection(&cs);
+    // send 부분
+    char sendBuf[BUFSIZE];
+    int sendSize;
+
+    for (int i = 0; i < 2; ++i) {
+      if (g_matches[matchNum].client_sock[i] == NULL) {
+        // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
+        continue;
+      }
+      if (!g_matches[matchNum].header) {  // playerinfo
+        sendParam::sendParam sendParam;
+        sendSize = sizeof(sendParam::sendParam);
+        if (i == 0) {
+          sendParam.myInfo = g_matches[matchNum].SPlayer1;
+          sendParam.otherInfo = g_matches[matchNum].SPlayer2;
+
+        } else if (i == 1) {
+          sendParam.myInfo = g_matches[matchNum].SPlayer2;
+          sendParam.otherInfo = g_matches[matchNum].SPlayer1;
+        }
+        memcpy(sendBuf, &sendParam, sizeof(sendParam));
+        // g_bullets 데이터 추가 직렬화
+        size_t offset = sizeof(sendParam::sendParam);  // sendParam 크기
+        size_t bulletDataSize = g_matches[matchNum].g_bullets.size() *
+                                sizeof(sendParam::Bullet);  // 원래 불렛 크기
+        sendSize += bulletDataSize;
+        if (!g_matches[matchNum].g_bullets.empty()) {
+          memcpy(sendBuf + offset, g_matches[matchNum].g_bullets.data(),
+                 bulletDataSize);  // 불렛들을 바로 보냄
+        }
+        int retval =
+            send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        if (retval == SOCKET_ERROR) {
+          // printf("client %d fail: %d\n", i, WSAGetLastError());
+        } else {
+          // printf("client %d send: %d byte\n", i, retval);
+        }
+      } 
+      else {
+        sendParam::MapInfoPacket mapInfoPacket;
+        sendSize = sizeof(sendParam::MapInfoPacket);
+        // p1 승일때
+        if (g_matches[matchNum].mapNum == 5) {
+          if (i == 0)
+            mapInfoPacket.info.mapNum = 5;
+          else if (i == 1)
+            mapInfoPacket.info.mapNum = 6;
+        }  // 수정
+        else if (g_matches[matchNum].mapNum == 6) {
+          if (i == 0)
+            mapInfoPacket.info.mapNum = 6;
+          else if (i == 1)
+            mapInfoPacket.info.mapNum = 5;
+        } else
+          mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
+        memcpy(sendBuf, &mapInfoPacket, sendSize);
+        int retval =
+            send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
+        if (retval == SOCKET_ERROR) {
+          // printf("clien %d fail: %d\n", i, WSAGetLastError());
+        } else {
+          // printf("client %d send %d bute\n", i, retval);
+        }
+      }
+    }
+    g_matches[matchNum].header = false;
+    // 이벤트 해제
+    ResetEvent(g_matches[matchNum].hEvent);
+  }
+  CloseHandle(g_matches[matchNum].hEvent);
+  return 0;
 }
 
 // 클라이언트와 데이터 통신
@@ -145,16 +310,11 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
   getpeername(client_sock, (struct sockaddr*)&clientaddr, &addrlen);
   inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
 
-  printf("\n[TCP server] client connect: IP address=%s, port number=%d\n", addr,
-         ntohs(clientaddr.sin_port));
+  printf("\n[TCP server] client connect: IP address=%s, port number=%d\n", addr, ntohs(clientaddr.sin_port));
 
   while (1) {
-    // 다른 스레드 작동중 대기
-    WaitForSingleObject(hEvent, INFINITE);
-    ResetEvent(hEvent);
     // 벡터의 유효한 범위 내에서, 현재 매치의 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는지 비교한다, 다르다면 감소
-
     while (matchNum >= 0 && matchNum < g_matches.size() &&
            g_matches[matchNum].matchNum != matchNum) {
       // 디버그옹 출력
@@ -164,17 +324,15 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
           matchNum, g_matches[matchNum].matchNum);
       matchNum--;
     }
-    // 디버그용 출력
-    // printf("\nrecvThread 루프 시작, matchNum: %d, playerNum: %d\n", matchNum,
-    // playerNum); 데이터 받기
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
       closeSocketFunc(client_sock, matchNum, playerNum);
-      SetEvent(hEvent);
+      ExitThread(0);
       break;
     } else if (retval == 0) {
-      SetEvent(hEvent);
+      //closeSocketFunc(client_sock, matchNum, playerNum);
+      //ExitThread(0);
       break;
     }
 
@@ -203,170 +361,27 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       }
     }
     else if (playerNum == 1) {
-      g_matches[matchNum].p2 = buf[0];
-      printf("[%s:%d] %c\n", addr, ntohs(clientaddr.sin_port),
-             g_matches[matchNum].p2);
-    }
-
-    if (retval == SOCKET_ERROR) {
-      err_display("send()");
-      SetEvent(hEvent);
-      break;
+      if (buf[1] == '\0') {  // 하나의 값만 들어옴
+        if (!g_matches[matchNum].player2.isCharging) {
+          g_matches[matchNum].p2 = input0;
+        } else {
+          if (input0 == ' ') {
+            g_matches[matchNum].p2 = input0;
+          } else if (input0 == '\b') {
+            g_matches[matchNum].p2 = input0;
+          }
+        }
+      } else {
+        g_matches[matchNum].p2 = input1;
+      }
     }
     // 이벤트 해제
-    SetEvent(hEvent);
+    SetEvent(g_matches[matchNum].hEvent);
   }
   // 소켓 닫기
   closesocket(client_sock);
   printf("[TCP server] client quit: IP address=%s, port number=%d\n", addr,
          ntohs(clientaddr.sin_port));
-  return 0;
-}
-
-DWORD WINAPI timerProcessClient(LPVOID lpParam) {
-  // 타이머 생성
-  int matchNum = (*(int*)lpParam);
-  delete (int*)lpParam;
-  HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
-  if (hTimer == NULL) {
-    printf("타이머 생성 실패\n");
-    return 1;
-  }
-
-  // 타이머 간격을 설정 (1/30초)
-  LARGE_INTEGER liDueTime;  // LARGE_INTEGER는 SetWaitableTimer에서 요구함
-  liDueTime.QuadPart = -160000;
-
-  while (true) {
-    // 타이머 설정
-    if (!SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, FALSE)) {
-      printf("타이머 설정 실패\n");
-      CloseHandle(hTimer);
-      SetEvent(hEvent);
-      return 1;
-    }
-
-    // 타이머 대기 시작
-    DWORD waitResult = WaitForSingleObject(hTimer, INFINITE);
-    if (waitResult != WAIT_OBJECT_0) {
-      printf("타이머 대기 실패 또는 중단: %d\n", GetLastError());
-      break;
-    }
-    // 벡터의 유효한 범위 내에서, 현재 매치 번호와, 매치[현재 매치번호]의 매치
-    // 번호가 일치하는 지 비교한다, 다르다면 감소
-    while (!(matchNum < 0) && matchNum < g_matches.size() &&
-           g_matches[matchNum].matchNum != matchNum) {
-      // 디버그용 출력
-      printf(
-          "matchNum: %d\n matchNum번째 매치의 실제 매치 번호: %d\n일치하지 "
-          "않음, matchNum감소\n",
-          matchNum, g_matches[matchNum].matchNum);
-      matchNum--;
-    }
-
-    EnterCriticalSection(&cs);
-    updatePlayerD(matchNum);
-    applyGravity(matchNum);
-    movePlayer(matchNum);
-    if (int isNext = IsNextColliding(matchNum)) {  // 1(p1), 2(p2)를 리턴하면 조건문 진입
-      if (g_matches[matchNum].mapNum == 1) {
-        InitMap(matchNum, map1);
-      } 
-      else if (g_matches[matchNum].mapNum == 2) {
-        InitMap(matchNum, map2);
-      }
-      DeleteAllEnemies(matchNum);
-      DeleteAllBullets(matchNum);
-      DeleteAllItems(matchNum);
-      initPlayer(matchNum);
-      initEnemy(matchNum);
-      initItem(matchNum);
-      // p1이 이기면 score+=10, p2가 이기면 score+=1
-      if (isNext == 1)
-        g_matches[matchNum].score+=10;
-      else if (isNext == 2)
-        g_matches[matchNum].score+=1;
-      // 추후 수정
-      g_matches[matchNum].header = true;
-    }
-    else {
-      moveBullets(matchNum);
-      g_matches[matchNum].shootInterval++;
-      if (g_matches[matchNum].shootInterval > 120) {
-        ShootBullet(matchNum);
-        g_matches[matchNum].shootInterval = 0;
-      }
-      for (auto& item : g_matches[matchNum].g_items) {
-        if (item.interval <= 0) {
-          item.disable = false;
-        } else {
-          item.interval--;
-        }
-      }
-      CheckCollisions(matchNum);
-      updateSendParam(matchNum);
-    }
-    LeaveCriticalSection(&cs);
-
-    // send 부분
-    char sendBuf[BUFSIZE];
-    int sendSize = sizeof(sendParam::sendParam);
-
-    for (int i = 0; i < 2; ++i) {
-      if (g_matches[matchNum].client_sock[i] == NULL) {
-        // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
-        continue;
-      }
-      if (!g_matches[matchNum].header) {    // playerinfo
-        sendParam::sendParam sendParam;
-        //sendSize = sendParam::sendParam;
-        // sendParam.header.header = static_cast<std::int8_t>(sendParam::PKT_CAT::PLAYER_INFO);
-        if (i == 0) {
-          sendParam.myInfo = g_matches[matchNum].SPlayer1;
-          sendParam.otherInfo = g_matches[matchNum].SPlayer2;
-
-        } else if (i == 1) {
-          sendParam.myInfo = g_matches[matchNum].SPlayer2;
-          sendParam.otherInfo = g_matches[matchNum].SPlayer1;
-        }
-        memcpy(sendBuf, &sendParam, sizeof(sendParam));
-        // g_bullets 데이터 추가 직렬화
-        size_t offset = sizeof(sendParam);  // sendParam 크기
-        size_t bulletDataSize =
-            g_matches[matchNum].g_bullets.size() *
-            sizeof(sendParam::Bullet);  // 원래 불렛 크기
-        //sendSize += bulletDataSize
-        if (!g_matches[matchNum].g_bullets.empty()) {
-          memcpy(sendBuf + offset, g_matches[matchNum].g_bullets.data(), bulletDataSize);  // 불렛들을 바로 보냄
-        }
-        int retval = send(g_matches[matchNum].client_sock[i], sendBuf, offset + bulletDataSize, 0);
-        if (retval == SOCKET_ERROR) {
-          printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
-        } else {
-          printf("client %d send: %d byte\n", i, retval);
-        }
-      } 
-      else {
-        sendParam::MapInfoPacket mapInfoPacket;
-        sendSize = sizeof(sendParam::MapInfoPacket);
-        mapInfoPacket.info.mapNum = g_matches[matchNum].mapNum;
-        memcpy(sendBuf, &mapInfoPacket, sendSize);
-        int retval = send(g_matches[matchNum].client_sock[i], sendBuf, sendSize, 0);
-        if (retval == SOCKET_ERROR) {
-          printf("클라이언트 %d에게 데이터 전송 실패: %d\n", i, WSAGetLastError());
-        } 
-        else {
-          // printf("클라이언트 %d에게 데이터 전송 성공: %d 바이트 전송됨\n", i, retval);
-        }
-        g_matches[matchNum].header = false;
-      }
-    }
-    // 이벤트 해제
-    SetEvent(hEvent);
-    // 필요에 따라 타이머 중단 조건을 추가.
-  }
-
-  CloseHandle(hTimer);
   return 0;
 }
 
@@ -407,9 +422,8 @@ int main(int argc, char* argv[]) {
   InitializeCriticalSection(&cs);
 
   while (1) {
-    printf("서버 대기중...\n");
+    printf("waiting for client...\n");
     addrlen = sizeof(clientaddr);
-    // 여기서 rParam 할당 해서 생성 하고 rParam값 주고
     rParam = new recvParam{};
     matchNumParam = new int{};
     rParam->client_sock =
@@ -418,8 +432,8 @@ int main(int argc, char* argv[]) {
       err_display("accept()");
       break;
     }
-    // 매치 생성 조건 - 현재 매치가 없거나(0), 마지막 매치의 player가 다
-    // 차있으면 생성 플레이어 1 생성 조건: 마지막 매치의 소켓0번이 비었으면 생성
+    // 매치 생성 조건 - 현재 매치가 없거나(0), 마지막 매치의 player가 다 차있으면 생성 
+    // 플레이어 1 생성 조건: 마지막 매치의 소켓0번이 비었으면 생성
     // 플레이어 2 생성 조건: 마지막 매치의 소켓1이 차있고 소켓2가 비었으면 생성
     // 타이머 생성 조건: 플레이어 1 생성할 때
     char addr[INET_ADDRSTRLEN];
@@ -429,8 +443,12 @@ int main(int argc, char* argv[]) {
     // 매치 생성
     if (g_matches.size() == 0 ||
         (!g_matches.empty() && g_matches.back().client_sock[0] != NULL &&
-         g_matches.back().client_sock[1] != NULL))
-      g_matches.push_back(MATCH());
+         g_matches.back().client_sock[1] != NULL)) {
+      //g_matches.push_back(MATCH());
+      MATCH newMatch;
+      newMatch.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // 이벤트 생성
+      g_matches.push_back(newMatch);
+    }
     // 플레이어1 스레드, 타이머 스레드 생성
     if (g_matches.back().client_sock[0] == NULL) {
       rParam->playerNum = 0;
@@ -444,29 +462,27 @@ int main(int argc, char* argv[]) {
       g_matches.back().recvThread[0] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       // 디버그용 출력
-      printf("%zu번 매치 대기중.. 클라이언트 수: %d\n", g_matches.size() - 1,
+      printf("%zu match is waiting.. num of client: %d\n", g_matches.size() - 1,
              1);
       // 타이머 스레드 생성
-      g_matches.back().timerThread =
-          CreateThread(NULL, 0, timerProcessClient, matchNumParam, 0, NULL);
+      g_matches.back().logicThread =
+          CreateThread(NULL, 0, GameLogicUpdateThread, matchNumParam, 0, NULL);
     }
     // 플레이어2 스레드 생성
 
     else if (g_matches.back().client_sock[0] != NULL &&
              g_matches.back().client_sock[1] == NULL) {
-      printf("2번 반복문 진입\n");
+      printf("enter for 2\n");
       rParam->playerNum = 1;
       rParam->matchNum = g_matches.size() - 1;
       g_matches.back().client_sock[1] = rParam->client_sock;
       // 디버그용 출력
-      printf("%d번째 매치 %d번째 플레이어 스레드 생성\n", rParam->matchNum,
+      printf("%dmatch %dplayer thread created\n", rParam->matchNum,
              rParam->playerNum);
       g_matches.back().recvThread[1] =
           CreateThread(NULL, 0, RecvProcessClient, rParam, 0, NULL);
       initPlayer(*matchNumParam);
     }
-    // 이벤트 해제
-    SetEvent(hEvent);
   }
 
   // 소켓 닫기
@@ -728,8 +744,7 @@ bool IsSlopeGoLeftColliding(int matchNum, int x, int y) {
 
 // 정수타입 리턴
 // 0: 충돌하지 않음, 1: p1과 충돌, 2: p2와 충돌
-int IsNextColliding(int matchNum) {  // p1인지 p2인지 알기 위해 bool보단
-                                     // 리턴타입을 정수로 리턴하도록 바꾸기
+int IsNextColliding(int matchNum) {  // p1인지 p2인지 알기 위해 bool보단 리턴타입을 정수로 리턴하도록 바꾸기
   int leftX = (g_matches[matchNum].player1.x - PLAYER_SIZE / 2) / GRID;
   int rightX = (g_matches[matchNum].player1.x + PLAYER_SIZE / 2 - 1) / GRID;
   int topY = (g_matches[matchNum].player1.y - PLAYER_SIZE / 2) / GRID;
@@ -819,13 +834,13 @@ void movePlayer(int matchNum) {
   newX = g_matches[matchNum].player2.x + g_matches[matchNum].player2.dx;
   newY = g_matches[matchNum].player2.y + g_matches[matchNum].player2.dy;
 
-  /*bool*/ isVerticalCollision =
+  isVerticalCollision =
       IsColliding(matchNum, g_matches[matchNum].player2.x, newY);
-  /*bool*/ isHorizontalCollision =
+  isHorizontalCollision =
       IsColliding(matchNum, newX, g_matches[matchNum].player2.y);
-  /*bool*/ isSlopeGoRightCollision = IsSlopeGoRightColliding(
+  isSlopeGoRightCollision = IsSlopeGoRightColliding(
       matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
-  /*bool*/ isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
+  isSlopeGoLeftCollision = IsSlopeGoLeftColliding(
       matchNum, g_matches[matchNum].player2.x, g_matches[matchNum].player2.y);
 
   // 수직 충돌 처리
@@ -937,10 +952,12 @@ void CheckItemPlayerCollisions(int matchNum) {
         g_matches[matchNum].player1.x <= (it->x + 1) * GRID &&
         g_matches[matchNum].player1.y >= it->y * GRID &&
         g_matches[matchNum].player1.y <= (it->y + 1) * GRID) {
-      g_matches[matchNum].player1.EnhancedJumpPower = true;
-      g_matches[matchNum].player1.isJumping = false;
-      it->disable = true;
-      it->interval = 60;
+      if (it->disable == false) {
+        g_matches[matchNum].player1.EnhancedJumpPower = true;
+        g_matches[matchNum].player1.isJumping = false;
+        it->disable = true;
+        it->interval = 60;
+      }
     }
     ++it;
   }
@@ -951,10 +968,12 @@ void CheckItemPlayerCollisions(int matchNum) {
         g_matches[matchNum].player2.x <= (it->x + 1) * GRID &&
         g_matches[matchNum].player2.y >= it->y * GRID &&
         g_matches[matchNum].player2.y <= (it->y + 1) * GRID) {
-      g_matches[matchNum].player2.EnhancedJumpPower = true;
-      g_matches[matchNum].player2.isJumping = false;
-      it->disable = true;
-      it->interval = 60;
+      if (it->disable == false) {
+        g_matches[matchNum].player2.EnhancedJumpPower = true;
+        g_matches[matchNum].player2.isJumping = false;
+        it->disable = true;
+        it->interval = 60;
+      }
     }
     ++it;
   }

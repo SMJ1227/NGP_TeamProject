@@ -334,6 +334,9 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                       static_cast<std::int8_t>(100),  // 임시 코드
                       0);
         return -1;
+        // 접속 종료시 처리
+        // 연결이 끊겼음(상대가 나감) + 판정승 처리
+        // map_num 4로 변경 -> InvalidateRect() 호출 -> 상대 이탈 메시지 + 판정승 출력(PostMessage로?)
       }
     }
 
@@ -652,10 +655,7 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       CheckItemPlayerCollisions(g_items, g_player);
       CheckItemPlayerCollisions(g_items, otherPlayer);
 
-      // 서버에서 충돌처리 된 대로 총알 출력하는 것으로 결정
-
-
-        break;
+      break;
     }
     }
 
@@ -890,6 +890,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
               case 4: {
                 break;
               }
+              case 5: {
+                // 승리
+                map_num = 4;
+                InvalidateRect(hWnd, NULL, FALSE);
+                PostMessage(hWnd, WM_USER + 5, 0, 0);
+                break;
+              }
+              case 6: {
+                map_num = 4;
+                InvalidateRect(hWnd, NULL, FALSE);
+                PostMessage(hWnd, WM_USER + 6, 0, 0);
+              }
             }
           }
 
@@ -897,6 +909,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
         }
       }
 
+      break;
+    }
+    case WM_USER + 5: {
+      MessageBox(hWnd, L"승리", L"게임 종료", MB_OK);
+      break;
+    }
+    case WM_USER + 6: {
+      MessageBox(hWnd, L"패배", L"게임 종료", MB_OK);
       break;
     }
     case WM_DESTROY: {
