@@ -337,7 +337,8 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
         return -1;
         // 접속 종료시 처리
         // 연결이 끊겼음(상대가 나감) + 판정승 처리
-        // map_num 4로 변경 -> InvalidateRect() 호출 -> 상대 이탈 메시지 + 판정승 출력(PostMessage로?) 
+        // map_num 4로 변경 -> InvalidateRect() 호출 -> 상대 이탈 메시지 +
+        // 판정승 출력(PostMessage로?)
       }
     }
 
@@ -350,7 +351,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
-          using PacketType = sendParam::sendParam_alt;
+          using PacketType = sendParam::sendParam;
           using InfoType = sendParam::playerInfo;
 
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
@@ -358,20 +359,20 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
           auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
 
-          std::int32_t bullets_size =
-              (recved_buffer_size - sizeof(sendParam::sendParam_alt)) /
-              sizeof(sendParam::Bullet);
+          auto bullets_size = (recved_buffer_size - kInfoPacketSize) /
+                              sizeof(sendParam::Bullet);
           // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
           auto player_infoes =
               new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
-                                .other_player = packet_ptr->otherInfo};
+                                .other_player = packet_ptr->otherInfo,
+                                .bullets{}};
 
           if (bullets_size > 0) {
             sendParam::Bullet* bullet_init =
                 reinterpret_cast<sendParam::Bullet*>(
                     std::next(recv_buff.data(), kInfoPacketSize));
-            auto bullet_range =
-                std::ranges::subrange{bullet_init, bullet_init + bullets_size};
+            auto bullet_range = std::ranges::subrange{
+                bullet_init, std::next(bullet_init, bullets_size)};
             player_infoes->bullets.reserve(bullet_range.size());
             player_infoes->bullets.append_range(bullet_range);
           }
@@ -804,14 +805,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           otherPlayer.face = player_infoes->other_player.face;
 
           g_bullets.clear();
-          g_bullets.reserve(player_infoes->bullets.size());
 
-          std::ranges::transform(
-              player_infoes->bullets, std::back_inserter(g_bullets),
-              [](sendParam::Bullet const& a_bullet) -> /*??::*/ Bullet {
-                return {.x = a_bullet.x, .y = a_bullet.y};
-              });
-
+          if (!player_infoes->bullets.empty()) {
+            g_bullets.reserve(player_infoes->bullets.size());
+            std::ranges::transform(
+                player_infoes->bullets, std::back_inserter(g_bullets),
+                [](sendParam::Bullet const& a_bullet) -> Bullet {
+                  return {.x = a_bullet.x, .y = a_bullet.y};
+                });
+          }
 #ifndef NDEBUG
           std::println(
               wow,
