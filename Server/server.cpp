@@ -1017,7 +1017,25 @@ void CheckPlayerBulletCollisions(int matchNum) {
   }
 }
 
-void CheckPlayersCollisions(int matchNum) {}
+void CheckPlayersCollisions(int matchNum) {
+  // 플레이어1과 플레이어2의 y 위치가 충분히 가깝다면 충돌 처리
+  if (abs(g_matches[matchNum].player1.x - g_matches[matchNum].player2.x) <= GRID - PLAYER_SIZE) {
+    if (abs(g_matches[matchNum].player1.y - g_matches[matchNum].player2.y) <= GRID) {
+    // 플레이어의 x 위치도 충분히 가까운지 확인
+      // 충돌 발생 시 수행할 작업
+      g_matches[matchNum].player1.dx =
+          g_matches[matchNum].player2.dx;  // 예: player1을 반대 방향으로 밀어냄
+      g_matches[matchNum].player1.isCharging = false;
+      g_matches[matchNum].player1.jumpSpeed = 0;
+    g_matches[matchNum].player2.dx =
+        g_matches[matchNum].player1.dx;  // 예: player2를 반대 방향으로 밀어냄
+      g_matches[matchNum].player2.isCharging = false;
+      g_matches[matchNum].player2.jumpSpeed = 0;
+    }
+    //y축 위에서 누를때 계산도 해야함
+  }
+}
+
 
 void updateSendParam(int matchNum) {
   // player 1
