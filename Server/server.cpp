@@ -509,7 +509,6 @@ void initPlayer(int matchNum) {
   g_matches[matchNum].player2.y = (MAP_HEIGHT - 4) * GRID;
 }
 
-// 아이템
 void initItem(int matchNum) {
   for (int y = 0; y < MAP_HEIGHT; y++) {
     for (int x = 0; x < MAP_WIDTH; x++) {
@@ -582,7 +581,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.face = true;
     }
   } 
-  else if (g_matches[matchNum].p1 == 'a') {
+  else if (g_matches[matchNum].p1 == 'A') {
     // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;
@@ -615,7 +614,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.spaceKeyReleased = true;
     }
   } 
-  else if (g_matches[matchNum].p1 == 'a') {
+  else if (g_matches[matchNum].p1 == 'A') {
     // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;
@@ -698,7 +697,10 @@ bool IsColliding(int matchNum, int x, int y) {
     return true;
   }
 
-  if (g_matches[matchNum].map[gridY][gridX] == 0) {
+  if (g_matches[matchNum].map[gridY][gridX] == 0 ||
+      g_matches[matchNum].map[gridY][gridX] == 2 ||
+      g_matches[matchNum].map[gridY][gridX] == 3)
+  {
     return true;
   }
   return false;
@@ -799,6 +801,7 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player1.dy = 0;  // 충돌 후 y축 속도 초기화
     g_matches[matchNum].player1.isJumping = false;
     g_matches[matchNum].player1.isSliding = false;
+    g_matches[matchNum].player1.EnhancedJumpPower = false;
   }
 
   // 수평 충돌 처리
@@ -860,6 +863,7 @@ void movePlayer(int matchNum) {
     g_matches[matchNum].player2.dy = 0;  // 충돌 후 y축 속도 초기화
     g_matches[matchNum].player2.isJumping = false;
     g_matches[matchNum].player2.isSliding = false;
+    g_matches[matchNum].player2.EnhancedJumpPower = false;
   }
 
   // 수평 충돌 처리
@@ -1019,23 +1023,32 @@ void CheckPlayerBulletCollisions(int matchNum) {
 
 void CheckPlayersCollisions(int matchNum) {
   // 플레이어1과 플레이어2의 y 위치가 충분히 가깝다면 충돌 처리
-  if (abs(g_matches[matchNum].player1.x - g_matches[matchNum].player2.x) <= GRID - PLAYER_SIZE) {
-    if (abs(g_matches[matchNum].player1.y - g_matches[matchNum].player2.y) <= GRID) {
-    // 플레이어의 x 위치도 충분히 가까운지 확인
-      // 충돌 발생 시 수행할 작업
+  if (abs(g_matches[matchNum].player1.x - g_matches[matchNum].player2.x) <= PLAYER_SIZE) {
+    if (g_matches[matchNum].player1.y <= g_matches[matchNum].player2.y - PLAYER_SIZE &&
+             g_matches[matchNum].player1.y >= g_matches[matchNum].player2.y - 25)
+    {
+        g_matches[matchNum].player1.dy = -10;
+        g_matches[matchNum].player2.dy = 5;
+    }
+    else if (g_matches[matchNum].player2.y <= g_matches[matchNum].player1.y - PLAYER_SIZE &&
+             g_matches[matchNum].player2.y >= g_matches[matchNum].player1.y - 25)
+    {
+        g_matches[matchNum].player2.dy = -10;
+        g_matches[matchNum].player1.dy = 5;
+    }
+    else if (abs(g_matches[matchNum].player1.y - g_matches[matchNum].player2.y) <= PLAYER_SIZE) {
       g_matches[matchNum].player1.dx =
-          g_matches[matchNum].player2.dx;  // 예: player1을 반대 방향으로 밀어냄
+            g_matches[matchNum].player2.dx < 0 ? -5 : 5;
+      g_matches[matchNum].player2.dx =
+        g_matches[matchNum].player2.dx < 0 ? 10 : -5;
+
       g_matches[matchNum].player1.isCharging = false;
       g_matches[matchNum].player1.jumpSpeed = 0;
-    g_matches[matchNum].player2.dx =
-        g_matches[matchNum].player1.dx;  // 예: player2를 반대 방향으로 밀어냄
       g_matches[matchNum].player2.isCharging = false;
       g_matches[matchNum].player2.jumpSpeed = 0;
     }
-    //y축 위에서 누를때 계산도 해야함
   }
 }
-
 
 void updateSendParam(int matchNum) {
   // player 1
