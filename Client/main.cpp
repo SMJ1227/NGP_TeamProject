@@ -209,7 +209,6 @@ vector<Enemy> g_enemies;
 
 struct Bullet {
   int x, y;
-  int dx, dy;
 };
 vector<Bullet> g_bullets;
 
@@ -232,7 +231,7 @@ void GenerateEnemy(int x, int y);
 void DrawEnemies(HDC hDC);
 void DeleteAllEnemies();
 void DrawBullets(HDC hDC);
-void DeleteAllBullets();
+
 void CheckItemPlayerCollisions(vector<Item>& items, const Player& player);
 void ShootBullet();
 void MoveBullets();
@@ -317,26 +316,29 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   int recved_buffer_size{};
 
   while (true) {
-    // 데이터 받기
-    return_value =
-        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size() - recved_buffer_size, 0);
+        // 데이터 받기
+        return_value =
+            recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
+                 recv_buff.size() - recved_buffer_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
         err_display(" : recv error");
+        err_quit(" : recv error");
         return -1;
       }
       case 0: {
         // 접속 종료 시 처리
         err_display(" : disconnected");
+        err_quit(" : recv error");
         ::PostMessage(window_handle, WM_NETWORK_INFORM,
                       static_cast<std::int8_t>(100),  // 임시 코드
                       0);
         return -1;
         // 접속 종료시 처리
         // 연결이 끊겼음(상대가 나감) + 판정승 처리
-        // map_num 4로 변경 -> InvalidateRect() 호출 -> 상대 이탈 메시지 + 판정승 출력(PostMessage로?) 
+        // map_num 4로 변경 -> InvalidateRect() 호출 -> 상대 이탈 메시지 +
+        // 판정승 출력(PostMessage로?)
       }
     }
 
@@ -349,7 +351,7 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       auto header = reinterpret_cast<HeaderType*>(recv_buff.data());
       switch (static_cast<HeaderType>(*header)) {
         case sendParam::PKT_CAT::PLAYER_INFO: {
-          using PacketType = sendParam::sendParam_alt;
+          using PacketType = sendParam::sendParam;
           using InfoType = sendParam::playerInfo;
 
           int constexpr kInfoHeaderSize = sizeof(HeaderType);
@@ -357,29 +359,25 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
 
           auto* packet_ptr = reinterpret_cast<PacketType*>(recv_buff.data());
 
-          std::int32_t bullets_size =
-              (recved_buffer_size - sizeof(sendParam::sendParam_alt)) /
-              sizeof(sendParam::Bullet);
+          auto bullets_size = (recved_buffer_size - kInfoPacketSize) /
+                              sizeof(sendParam::Bullet);
           // 메세지로 보낼 정보 구조체 할당받고 받은 데이터 읽기
           auto player_infoes =
               new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
-                                .other_player = packet_ptr->otherInfo};
+                                .other_player = packet_ptr->otherInfo,
+                                .bullets{}};
 
           if (bullets_size > 0) {
             sendParam::Bullet* bullet_init =
                 reinterpret_cast<sendParam::Bullet*>(
                     std::next(recv_buff.data(), kInfoPacketSize));
-            auto bullet_range =
-                std::ranges::subrange{bullet_init, bullet_init + bullets_size};
+            auto bullet_range = std::ranges::subrange{
+                bullet_init, std::next(bullet_init, bullets_size)};
             player_infoes->bullets.reserve(bullet_range.size());
             player_infoes->bullets.append_range(bullet_range);
           }
 
           // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
-          // if (kInfoPacketSize > recved_buffer_size) {
-          //  unfinished = false;
-          //  break;
-          //}
 
 #ifndef NDEBUG
           std::println(wow, "PLAYER_INFO recv  {} = my {} {} other {} {}",
@@ -458,98 +456,109 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   return 0;
 }
 
-DWORD WINAPI SendClient(LPVOID lp_param) {
-  SOCKET server_sock = (SOCKET)lp_param;
-  int return_value{};
+DWORD WINAPI SendClient(LPVOID lp_param)
+{
+    SOCKET server_sock = (SOCKET)lp_param;
+    int return_value{};
 
-  USHORT left_check_value{};
-  USHORT right_check_value{};
-  USHORT space_check_value{};
+    USHORT left_check_value{};
+    USHORT right_check_value{};
+    USHORT space_check_value{};
 
-  bool is_pressed_left{false};
-  bool is_pressed_right{false};
-  bool is_pressed_space{false};
-  bool was_pressed_space{false};
+    bool is_pressed_left{false};
+    bool is_pressed_right{false};
+    bool is_pressed_space{false};
+    bool was_pressed_space{false};
 
-  std::vector<char> buffer{};
-  buffer.reserve(3);
+    std::vector<char> buffer{};
+    buffer.reserve(3);
 
-  while (true) {
-    // �Է� ���� Ȯ��
-    left_check_value = GetAsyncKeyState(VK_LEFT);
-    right_check_value = GetAsyncKeyState(VK_RIGHT);
-    space_check_value = GetAsyncKeyState(VK_SPACE);
+    while (true)
+    {
+        // �Է� ���� Ȯ��
+        left_check_value = GetAsyncKeyState(VK_LEFT);
+        right_check_value = GetAsyncKeyState(VK_RIGHT);
+        space_check_value = GetAsyncKeyState(VK_SPACE);
 
-    // 버퍼 정리
-    buffer.clear();
+        // 버퍼 정리
+        buffer.clear();
 
-    // 유효 입력 처리
+        // 유효 입력 처리
 
-    // 좌우 처리
-    is_pressed_left = (left_check_value & 0x8000) != 0;
-    is_pressed_right = (right_check_value & 0x8000) != 0;
+        // 좌우 처리
+        is_pressed_left = (left_check_value & 0x8000) != 0;
+        is_pressed_right = (right_check_value & 0x8000) != 0;
 
-    if (!(is_pressed_left && is_pressed_right)) {
-      if (is_pressed_left) {
-        buffer.push_back('0');
-      }
-      if (is_pressed_right) {
-        buffer.push_back('1');
-      }
-    }
+        if (!(is_pressed_left && is_pressed_right))
+        {
+            if (is_pressed_left)
+            {
+                buffer.push_back('0');
+            }
+            if (is_pressed_right)
+            {
+                buffer.push_back('1');
+            }
+        }
 
-    //
-    is_pressed_space = (space_check_value & 0x8000) != 0;
+        //
+        is_pressed_space = (space_check_value & 0x8000) != 0;
 
-    if (is_pressed_space && !was_pressed_space) {
-      buffer.push_back(' ');
-      was_pressed_space = true;
-
-#ifndef NDEBUG
-      std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
-#endif  // NDEBUG
-    } else if (!is_pressed_space && was_pressed_space) {
-      buffer.push_back('\b');
-      was_pressed_space = false;
+        if (is_pressed_space && !was_pressed_space)
+        {
+            buffer.push_back(' ');
+            was_pressed_space = true;
 
 #ifndef NDEBUG
-      std::println(wow,
-                   "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
+            std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                         return_value, std::string_view{buffer}, buffer.size(),
+                         left_check_value, right_check_value, space_check_value);
+            wow.emit();
+            wow.flush();
 #endif  // NDEBUG
+        }
+        else if (!is_pressed_space && was_pressed_space)
+        {
+            buffer.push_back('\b');
+            was_pressed_space = false;
+
+#ifndef NDEBUG
+            std::println(wow,
+                         "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                         return_value, std::string_view{buffer}, buffer.size(),
+                         left_check_value, right_check_value, space_check_value);
+            wow.emit();
+            wow.flush();
+#endif  // NDEBUG
+        }
+
+        // 눌린 것이 없으면 참여중인 것을 확인하는 값을 보냄
+        if (buffer.empty())
+        {
+            buffer.push_back('A');
+        }
+
+        // 전송 및 로그
+        return_value = send(server_sock, buffer.data(), buffer.size(), 0);
+
+        switch (return_value)
+        {
+        case SOCKET_ERROR:
+        {
+            err_quit("result of send : sock error");
+            break;
+        }
+        case 0:
+        {
+            err_quit("result of send : server disconnect");
+            break;
+        }
+        }
+
+        // 입력 대기
+        Sleep(1000 / 60);
     }
-
-    // 눌린 것이 없으면 넘김
-    if (buffer.empty()) {
-      std::this_thread::yield();
-      continue;
-    }
-
-    // 전송 및 로그
-    return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-
-    switch (return_value) {
-      case SOCKET_ERROR: {
-        err_quit("result of send : sock error");
-        break;
-      }
-      case 0: {
-        err_quit("result of send : server disconnect");
-        break;
-      }
-    }
-
-    // 입력 대기
-    Sleep(1000 / 60);
-  }
-  return 0;
+    return 0;
 }
 
 //--- CImage 관련 변수 선언
@@ -630,8 +639,8 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       break;
     }
     case 3: {
-      Update();
-      // player1, 2와 아이템 충돌 확인
+        Update();
+        // player1, 2와 아이템 충돌 확인
 
       for (auto& item : g_items) {
         if (item.interval <= 0)
@@ -692,7 +701,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           InitPlayer(g_player);
           InitPlayer(otherPlayer);
           DeleteAllEnemies();
-          DeleteAllBullets();
+
           DeleteAllItems();
           InitEnemy(map);
           InitItems(map);
@@ -807,15 +816,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
           otherPlayer.face = player_infoes->other_player.face;
 
           g_bullets.clear();
-          g_bullets.reserve(player_infoes->bullets.size());
 
-          std::ranges::transform(
-              player_infoes->bullets, std::back_inserter(g_bullets),
-              [](sendParam::Bullet const& a_bullet) {
-                return Bullet{
-                    .x = a_bullet.x, .y = a_bullet.y, .dx = 0, .dy = 0};
-              });
-
+          if (!player_infoes->bullets.empty()) {
+            g_bullets.reserve(player_infoes->bullets.size());
+            std::ranges::transform(
+                player_infoes->bullets, std::back_inserter(g_bullets),
+                [](sendParam::Bullet const& a_bullet) -> Bullet {
+                  return {.x = a_bullet.x, .y = a_bullet.y};
+                });
+          }
 #ifndef NDEBUG
           std::println(
               wow,
@@ -847,7 +856,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 InitPlayer(g_player);
                 InitPlayer(otherPlayer);
                 DeleteAllEnemies();
-                DeleteAllBullets();
+
                 DeleteAllItems();
                 InitEnemy(map);
                 InitItems(map);
@@ -858,7 +867,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 InitPlayer(g_player);
                 InitPlayer(otherPlayer);
                 DeleteAllEnemies();
-                DeleteAllBullets();
                 DeleteAllItems();
                 InitEnemy(map);
                 InitItems(map);
@@ -869,7 +877,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 InitPlayer(g_player);
                 InitPlayer(otherPlayer);
                 DeleteAllEnemies();
-                DeleteAllBullets();
                 DeleteAllItems();
                 InitEnemy(map);
                 InitItems(map);
@@ -1219,21 +1226,11 @@ void DrawBullets(HDC hdc) {
   DeleteObject(hBrush);
 }
 
-void DeleteAllBullets() { g_bullets.clear(); }
-
 // recv받은 데이터로 출력 정보 업데이트, 수신 버퍼로 전달받은 데이터 해석
 void Update() {
   for (auto& item : g_items) {
     // item의 disable을 전달받은 disable로 업데이트
   }
-  // 맵 변경을 전달받으면 출력 정보 초기화    ex) if(header == 2)
-  /*
-  InitPlayer();
-  DeleteAllEnemies();
-  DeleteAllBullets();
-  DeleteAllItems();
-  InitEnemy(map);
-  InitItems(map);*/
 
   if (map_num == 4 /*|| 게임 종료(연결 끊김)*/) {
     // 4번째 맵 또는 게임 종료를 전달받으면 종료시 필요한 정보로 업데이트
@@ -1362,29 +1359,6 @@ void CheckItemPlayerCollisions(vector<Item>& items, const Player& player) {
       it->interval = 60;
     }
     ++it;
-  }
-}
-
-void ShootBullet() {
-  for (const auto& enemy : g_enemies) {
-    Bullet newBullet;
-    newBullet.x = (enemy.x + 1) * GRID;  // 적의 위치에서 총알이 나가도록 설정
-    newBullet.y = enemy.y * GRID + GRID / 2;
-    newBullet.dx = 2;
-    newBullet.dy = 0;
-    g_bullets.push_back(newBullet);
-  }
-}
-
-void MoveBullets() {
-  for (auto it = g_bullets.begin(); it != g_bullets.end();) {
-    it->x += it->dx;
-    it->y += it->dy;
-    if (it->x < 0 || it->x > BOARD_WIDTH) {
-      it = g_bullets.erase(it);
-    } else {
-      ++it;
-    }
   }
 }
 
