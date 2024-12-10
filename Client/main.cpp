@@ -534,11 +534,10 @@ DWORD WINAPI SendClient(LPVOID lp_param)
 #endif  // NDEBUG
         }
 
-        // 눌린 것이 없으면 넘김
+        // 눌린 것이 없으면 참여중인 것을 확인하는 값을 보냄
         if (buffer.empty())
         {
-            std::this_thread::yield();
-            continue;
+            buffer.push_back('A');
         }
 
         // 전송 및 로그
