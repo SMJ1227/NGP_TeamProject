@@ -316,10 +316,10 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   int recved_buffer_size{};
 
   while (true) {
-    // 데이터 받기
-    return_value =
-        recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
-             recv_buff.size() - recved_buffer_size, 0);
+        // 데이터 받기
+        return_value =
+            recv(server_sock, std::next(recv_buff.data(), recved_buffer_size),
+                 recv_buff.size() - recved_buffer_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
         // 수신 문제
@@ -456,98 +456,109 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
   return 0;
 }
 
-DWORD WINAPI SendClient(LPVOID lp_param) {
-  SOCKET server_sock = (SOCKET)lp_param;
-  int return_value{};
+DWORD WINAPI SendClient(LPVOID lp_param)
+{
+    SOCKET server_sock = (SOCKET)lp_param;
+    int return_value{};
 
-  USHORT left_check_value{};
-  USHORT right_check_value{};
-  USHORT space_check_value{};
+    USHORT left_check_value{};
+    USHORT right_check_value{};
+    USHORT space_check_value{};
 
-  bool is_pressed_left{false};
-  bool is_pressed_right{false};
-  bool is_pressed_space{false};
-  bool was_pressed_space{false};
+    bool is_pressed_left{false};
+    bool is_pressed_right{false};
+    bool is_pressed_space{false};
+    bool was_pressed_space{false};
 
-  std::vector<char> buffer{};
-  buffer.reserve(3);
+    std::vector<char> buffer{};
+    buffer.reserve(3);
 
-  while (true) {
-    // �Է� ���� Ȯ��
-    left_check_value = GetAsyncKeyState(VK_LEFT);
-    right_check_value = GetAsyncKeyState(VK_RIGHT);
-    space_check_value = GetAsyncKeyState(VK_SPACE);
+    while (true)
+    {
+        // �Է� ���� Ȯ��
+        left_check_value = GetAsyncKeyState(VK_LEFT);
+        right_check_value = GetAsyncKeyState(VK_RIGHT);
+        space_check_value = GetAsyncKeyState(VK_SPACE);
 
-    // 버퍼 정리
-    buffer.clear();
+        // 버퍼 정리
+        buffer.clear();
 
-    // 유효 입력 처리
+        // 유효 입력 처리
 
-    // 좌우 처리
-    is_pressed_left = (left_check_value & 0x8000) != 0;
-    is_pressed_right = (right_check_value & 0x8000) != 0;
+        // 좌우 처리
+        is_pressed_left = (left_check_value & 0x8000) != 0;
+        is_pressed_right = (right_check_value & 0x8000) != 0;
 
-    if (!(is_pressed_left && is_pressed_right)) {
-      if (is_pressed_left) {
-        buffer.push_back('0');
-      }
-      if (is_pressed_right) {
-        buffer.push_back('1');
-      }
-    }
+        if (!(is_pressed_left && is_pressed_right))
+        {
+            if (is_pressed_left)
+            {
+                buffer.push_back('0');
+            }
+            if (is_pressed_right)
+            {
+                buffer.push_back('1');
+            }
+        }
 
-    //
-    is_pressed_space = (space_check_value & 0x8000) != 0;
+        //
+        is_pressed_space = (space_check_value & 0x8000) != 0;
 
-    if (is_pressed_space && !was_pressed_space) {
-      buffer.push_back(' ');
-      was_pressed_space = true;
-
-#ifndef NDEBUG
-      std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
-#endif  // NDEBUG
-    } else if (!is_pressed_space && was_pressed_space) {
-      buffer.push_back('\b');
-      was_pressed_space = false;
+        if (is_pressed_space && !was_pressed_space)
+        {
+            buffer.push_back(' ');
+            was_pressed_space = true;
 
 #ifndef NDEBUG
-      std::println(wow,
-                   "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
-                   return_value, std::string_view{buffer}, buffer.size(),
-                   left_check_value, right_check_value, space_check_value);
-      wow.emit();
-      wow.flush();
+            std::println(wow, "send sp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                         return_value, std::string_view{buffer}, buffer.size(),
+                         left_check_value, right_check_value, space_check_value);
+            wow.emit();
+            wow.flush();
 #endif  // NDEBUG
+        }
+        else if (!is_pressed_space && was_pressed_space)
+        {
+            buffer.push_back('\b');
+            was_pressed_space = false;
+
+#ifndef NDEBUG
+            std::println(wow,
+                         "send bsp {} = {}:{} left {:0x} right {:0x} space {:0x}",
+                         return_value, std::string_view{buffer}, buffer.size(),
+                         left_check_value, right_check_value, space_check_value);
+            wow.emit();
+            wow.flush();
+#endif  // NDEBUG
+        }
+
+        // 눌린 것이 없으면 참여중인 것을 확인하는 값을 보냄
+        if (buffer.empty())
+        {
+            buffer.push_back('A');
+        }
+
+        // 전송 및 로그
+        return_value = send(server_sock, buffer.data(), buffer.size(), 0);
+
+        switch (return_value)
+        {
+        case SOCKET_ERROR:
+        {
+            err_quit("result of send : sock error");
+            break;
+        }
+        case 0:
+        {
+            err_quit("result of send : server disconnect");
+            break;
+        }
+        }
+
+        // 입력 대기
+        Sleep(1000 / 60);
     }
-
-    // 눌린 것이 없으면 넘김
-    if (buffer.empty()) {
-      std::this_thread::yield();
-      continue;
-    }
-
-    // 전송 및 로그
-    return_value = send(server_sock, buffer.data(), buffer.size(), 0);
-
-    switch (return_value) {
-      case SOCKET_ERROR: {
-        err_quit("result of send : sock error");
-        break;
-      }
-      case 0: {
-        err_quit("result of send : server disconnect");
-        break;
-      }
-    }
-
-    // 입력 대기
-    Sleep(1000 / 60);
-  }
-  return 0;
+    return 0;
 }
 
 //--- CImage 관련 변수 선언
@@ -628,8 +639,8 @@ void CALLBACK TimerProc(HWND hWnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
       break;
     }
     case 3: {
-      Update();
-      // player1, 2와 아이템 충돌 확인
+        Update();
+        // player1, 2와 아이템 충돌 확인
 
       for (auto& item : g_items) {
         if (item.interval <= 0)
