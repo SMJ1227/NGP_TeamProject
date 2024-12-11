@@ -184,6 +184,7 @@ WSADATA g_wsa;
 HANDLE g_hSendThread{};
 HANDLE g_hRecvThread{};
 UINT constexpr WM_NETWORK_INFORM = WM_USER + 1;
+UINT constexpr WM_GAME_OVER = WM_USER + 5;
 
 // 전역 변수
 struct Player {
@@ -322,26 +323,26 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
                  recv_buff.size() - recved_buffer_size, 0);
     switch (return_value) {
       case SOCKET_ERROR: {
-        // 수신 문제
-        err_display(" : recv error");
+        /*err_display(" : recv error");
         err_quit(" : recv error");
-        return -1;
+        return -1;*/
+              break;
       }
       case 0: {
-        // 접속 종료 시 처리
-        err_display(" : disconnected");
-        err_quit(" : recv error");
-        ::PostMessage(window_handle, WM_NETWORK_INFORM,
-                      static_cast<std::int8_t>(100),  // 임시 코드
-                      0);
-        return -1;
+        //err_display(" : disconnected");
+        //err_quit(" : recv error");
+        //::PostMessage(window_handle, WM_NETWORK_INFORM,
+        //              static_cast<std::int8_t>(100),  // 임시 코드
+        //              0);
+        //return -1;
         // 접속 종료시 처리
         // 연결이 끊겼음(상대가 나감) + 판정승 처리
         // map_num 4로 변경 -> InvalidateRect() 호출 -> 상대 이탈 메시지 +
         // 판정승 출력(PostMessage로?)
+              break;
       }
     }
-
+    if (return_value == 0|| return_value==SOCKET_ERROR) break;
     // 받은 데이터 크기 반영
     recved_buffer_size += return_value;
 
@@ -453,6 +454,9 @@ DWORD WINAPI RecvClient(LPVOID lp_param) {
       }
     }
   }
+
+  ::PostMessage(window_handle, WM_NETWORK_INFORM,static_cast<std::int8_t>(100),0);
+
   return 0;
 }
 
@@ -796,7 +800,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
       } else {
         network_checked_deallocated = lParam;
       }
-
+      if (curr_cat == 100)
+      {
+          map_num = 4;
+          InvalidateRect(hWnd, NULL, FALSE);
+          PostMessage(hWnd, WM_GAME_OVER, 2, 0);
+          break;
+      }
       // recv에서 보낸 정보 처리
       switch (static_cast<HeaderType>(curr_cat)) {
         case HeaderType::PLAYER_INFO: {
@@ -889,13 +899,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
                 // 승리
                 map_num = 4;
                 InvalidateRect(hWnd, NULL, FALSE);
-                PostMessage(hWnd, WM_USER + 5, 0, 0);
+                PostMessage(hWnd, WM_GAME_OVER, 0, 0);
                 break;
               }
               case 6: {
                 map_num = 4;
                 InvalidateRect(hWnd, NULL, FALSE);
-                PostMessage(hWnd, WM_USER + 6, 0, 0);
+                PostMessage(hWnd, WM_GAME_OVER, 1, 0);
+                break;
               }
             }
           }
@@ -906,12 +917,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       break;
     }
-    case WM_USER + 5: {
-      MessageBox(hWnd, L"승리", L"게임 종료", MB_OK);
-      break;
-    }
-    case WM_USER + 6: {
-      MessageBox(hWnd, L"패배", L"게임 종료", MB_OK);
+    case WM_GAME_OVER: {
+      if (wParam == 0) MessageBox(hWnd, L"승리", L"게임 종료", MB_OK);
+      else if (wParam == 1) MessageBox(hWnd, L"패배", L"게임 종료", MB_OK);
+      else if (wParam == 2) MessageBox(hWnd, L"상대방이 나갔습니다, 승리.", L"게임 종료", MB_OK);
+      InvalidateRect(hWnd, NULL, TRUE);
       break;
     }
     case WM_DESTROY: {
