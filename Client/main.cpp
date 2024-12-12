@@ -379,16 +379,26 @@ DWORD WINAPI RecvClient(LPVOID lp_param)
                         new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
                                           .other_player = packet_ptr->otherInfo,
                                           .bullets{}};
-
-                    if (bullets_size > 0)
+                    // 
+                    if (0 < bullets_size)
                     {
-                        sendParam::Bullet* bullet_init =
-                            reinterpret_cast<sendParam::Bullet*>(
-                                std::next(recv_buff.data(), kInfoPacketSize));
-                        auto bullet_range = std::ranges::subrange{
-                            bullet_init, std::next(bullet_init, bullets_size)};
-                        player_infoes->bullets.reserve(bullet_range.size());
-                        player_infoes->bullets.append_range(bullet_range);
+                        if (0 ==
+                            (recved_buffer_size - kInfoPacketSize) %
+                                sizeof(sendParam::Bullet))
+                        {
+                            sendParam::Bullet* bullet_init =
+                                reinterpret_cast<sendParam::Bullet*>(std::next(
+                                    recv_buff.data(), kInfoPacketSize));
+                            auto bullet_range = std::ranges::subrange{
+                                bullet_init,
+                                std::next(bullet_init, bullets_size)};
+                            player_infoes->bullets.reserve(bullet_range.size());
+                            player_infoes->bullets.append_range(bullet_range);
+                        }
+                        else
+                        {
+                            player_infoes->bullets.push_back({.x= -1, .y= -1});
+                        }
                     }
 
                     // 데이터를 다 받았는지 확인 못하는 형태로 전송됨
@@ -461,8 +471,15 @@ DWORD WINAPI RecvClient(LPVOID lp_param)
                                 std::next(recv_buff.data(), kInfoPacketSize),
                                 recved_buffer_size - kInfoPacketSize);
                     recved_buffer_size -= kInfoPacketSize;
+                    if (0 < recved_buffer_size)
+                    {
+                        finished = false;
+                    }
+                    else
+                    {
+                        finished = true;
+                    }
 
-                    finished = true;
                     break;
                 }
             default:
@@ -883,16 +900,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     g_player.face = player_infoes->my_player.face;
                     otherPlayer.face = player_infoes->other_player.face;
 
-                    g_bullets.clear();
 
                     if (!player_infoes->bullets.empty())
                     {
-                        g_bullets.reserve(player_infoes->bullets.size());
-                        std::ranges::transform(
-                            player_infoes->bullets,
-                            std::back_inserter(g_bullets),
-                            [](sendParam::Bullet const& a_bullet) -> Bullet
-                            { return {.x = a_bullet.x, .y = a_bullet.y}; });
+                        if (player_infoes->bullets.at(0).x == -1 &&
+                            player_infoes->bullets.at(0).y == -1)
+                        {
+                            for (auto& bullet : g_bullets)
+                            {
+                                bullet.x += 2;
+                            }
+                        }
+                        else
+                        {
+                            g_bullets.clear();
+                            g_bullets.reserve(player_infoes->bullets.size());
+                            std::ranges::transform(
+                                player_infoes->bullets,
+                                std::back_inserter(g_bullets),
+                                [](sendParam::Bullet const& a_bullet) -> Bullet
+                                { return {.x = a_bullet.x, .y = a_bullet.y}; });
+                        }
+                    }
+                    else
+                    {
+                        g_bullets.clear();
                     }
 #ifndef NDEBUG
                     std::println(wow,
