@@ -51,7 +51,6 @@ struct recvParam {
 typedef struct MATCH {
   SOCKET client_sock[2]{NULL, NULL};
   HANDLE recvThread[2]{NULL, NULL};
-  // HANDLE timerThread;
   HANDLE logicThread;
   HANDLE hEvent;
   Player player1;
@@ -646,9 +645,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.dx += 1;
     }
   } 
-  if (g_matches[matchNum].p1 != ' ') {
-    g_matches[matchNum].p1 = 'a';
-  }
+  
 
   // player2 처리
   if (g_matches[matchNum].p2 == '0') {
@@ -698,9 +695,6 @@ void updatePlayerD(int matchNum) {
     } else if (g_matches[matchNum].player2.dx < 0) {
       g_matches[matchNum].player2.dx += 1;
     }
-  }
-  if (g_matches[matchNum].p2 != ' ') {
-    g_matches[matchNum].p2 = 'a';
   }
 }
 
@@ -934,7 +928,10 @@ void moveBullets(int matchNum) {
 
 void CheckCollisions(int matchNum) {
   CheckEnemyPlayerCollisions(matchNum);
-  CheckItemPlayerCollisions(matchNum);
+    if (g_matches[matchNum].client_sock[1] != NULL)
+    {
+        CheckItemPlayerCollisions(matchNum);
+    }
   CheckPlayerBulletCollisions(matchNum);
   CheckPlayersCollisions(matchNum);
 }
