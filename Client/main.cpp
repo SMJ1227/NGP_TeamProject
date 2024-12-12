@@ -592,12 +592,10 @@ DWORD WINAPI SendClient(LPVOID lp_param)
         {
         case SOCKET_ERROR:
             {
-                err_quit("result of send : sock error");
                 break;
             }
         case 0:
             {
-                err_quit("result of send : server disconnect");
                 break;
             }
         }
