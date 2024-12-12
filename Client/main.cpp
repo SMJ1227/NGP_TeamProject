@@ -1031,7 +1031,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             else if (wParam == 1)
                 MessageBox(hWnd, L"패배", L"게임 종료", MB_OK);
             else if (wParam == 2)
-                MessageBox(hWnd, L"상대방이 나갔습니다, 승리.", L"게임 종료",
+                MessageBox(hWnd, L"연결이 끊겼습니다", L"게임 종료",
                            MB_OK);
             InvalidateRect(hWnd, NULL, TRUE);
             break;

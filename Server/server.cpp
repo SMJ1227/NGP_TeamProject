@@ -112,26 +112,53 @@ void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
   printf("%dmatch %dplayer disconnectd\n", matchNum, playerNum);
 
   // deleteThreadIDs에 삭제해야할 스레드 ID 추가, 이 함수 호출한 recv스레드는 호출 후 자살해서 벡터에 추가X
-  if (playerNum == 0) deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[1]);
-  else if (playerNum == 1) deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[0]);
+  if (playerNum == 0)
+  {
+      // deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[1]);
+      if (std::find(deleteThreadIDs.begin(), deleteThreadIDs.end(),
+                    g_matches[matchNum].recvThreadID[1]) ==
+          deleteThreadIDs.end())
+      {
+          deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[1]);
+      }
+      // closesocket(g_matches[matchNum].client_sock[1]);
+  }
+  else if (playerNum == 1)
+  {
+      // deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[0]);
+      if (std::find(deleteThreadIDs.begin(), deleteThreadIDs.end(),
+                    g_matches[matchNum].recvThreadID[0]) ==
+          deleteThreadIDs.end())
+      {
+          deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[0]);
+      }
+      // closesocket(g_matches[matchNum].client_sock[0]);
+  }
   deleteThreadIDs.push_back(g_matches[matchNum].logicThreadID);
   for (const auto& threadID : deleteThreadIDs)
   {
       printf("deleteThreadIDs: %d\n", threadID);
   }
   SetEvent(g_matches[matchNum].hEvent);
-  std::vector<MATCH>::iterator iter = g_matches.begin();
+  /*std::vector<MATCH>::iterator iter = g_matches.begin();
   for (int i = 0; i < matchNum; i++) iter++;
   g_matches.erase(std::remove(g_matches.begin(), g_matches.end(), *iter),
                   g_matches.end());
+  for (auto i = g_matches.begin() + 1; i != g_matches.end(); i++)
+  {
+      i->matchNum = 0;
+  }*/
+  //g_matches.erase(g_matches.begin() + matchNum);
   // 디버그용 출력
-  printf("delete match: %d\n", matchNum);
+  //printf("delete match: %d\n", matchNum);
+  //printf("match size: %du\n", g_matches.size());
+  //for (int i = 0; i < g_matches.size(); i++) {
+  //  g_matches[i].matchNum = i;
+  //  //printf("%d match's matchNum: %d\n", i, g_matches[i].matchNum);
+  //}
 
-  for (int i = 0; i < g_matches.size(); i++) {
-    g_matches[i].matchNum = i;
-  }
-
-  
+  //printf("%d match's matchNum: %d\n", 1, g_matches[1].matchNum);
+  //printf("%d match's matchNum: %d\n", 2, g_matches[2].matchNum);
 }
 
 void UpdateGameLogic(int matchNum) {
@@ -216,12 +243,16 @@ DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
     }
     LeaveCriticalSection(&cs);
 
-    while (!(matchNum < 0) && matchNum < g_matches.size() &&
-           g_matches[matchNum].matchNum != matchNum) {
-      // 디버그용 출력
-      printf("matchNum--\n");
-      matchNum--;
-    }
+    //EnterCriticalSection(&cs);
+    //printf("matchNum: %d, g_matches[matchNum].matchNum: %d\n", matchNum,
+    //       g_matches[matchNum].matchNum);
+    //while (matchNum >= 0 && g_matches[matchNum].matchNum != matchNum)
+    //{
+    //    // 디버그옹 출력
+    //    printf("matchNum--\n");
+    //    matchNum--;
+    //}
+    //LeaveCriticalSection(&cs);
 
     EnterCriticalSection(&cs);
     UpdateGameLogic(matchNum);
@@ -336,12 +367,14 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       LeaveCriticalSection(&cs);
     // 벡터의 유효한 범위 내에서, 현재 매치의 번호와, 매치[현재 매치번호]의 매치
     // 번호가 일치하는지 비교한다, 다르다면 감소
-    while (matchNum >= 0 && matchNum < g_matches.size() &&
-           g_matches[matchNum].matchNum != matchNum) {
-      // 디버그옹 출력
+    /*EnterCriticalSection(&cs);
+    printf("matchNum: %d, g_matches[matchNum].matchNum: %d\n", matchNum,
+             g_matches[matchNum].matchNum);
+    while (g_matches[matchNum].matchNum != matchNum) {
       printf("matchNum--\n");
       matchNum--;
     }
+    LeaveCriticalSection(&cs);*/
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
@@ -349,8 +382,8 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
       ExitThread(0);*/
       break;
     } else if (retval == 0) {
-      
-      break;
+        printf("client %d Signal loss\n", playerNum);
+        break;
     }
 
     // 받은 데이터 출력
@@ -396,10 +429,12 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
     SetEvent(g_matches[matchNum].hEvent);
   }
   // 소켓 닫기
+  EnterCriticalSection(&cs);
   closesocket(client_sock);
   printf("[TCP server] client quit: IP address=%s, port number=%d\n", addr,
          ntohs(clientaddr.sin_port));
   closeSocketFunc(client_sock, matchNum, playerNum);
+  LeaveCriticalSection(&cs);
   // closeSocketFunc으로 매치가 삭제돼서 SetEvent를 호출하면 다른 매치의 이벤트가 삭제됨 아닌가 로직은 삭제되는데 리시브가 삭제안됨
   //SetEvent(g_matches[matchNum].hEvent);
   ExitThread(0);
