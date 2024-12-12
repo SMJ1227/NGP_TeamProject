@@ -605,7 +605,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.face = true;
     }
   } 
-  else if (g_matches[matchNum].p1 == 'A') {
+  else if (g_matches[matchNum].p1 == 'a') {
     // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;
@@ -638,7 +638,7 @@ void updatePlayerD(int matchNum) {
       g_matches[matchNum].player1.spaceKeyReleased = true;
     }
   } 
-  else if (g_matches[matchNum].p1 == 'A') {
+  else if (g_matches[matchNum].p1 == 'a') {
     // 왼쪽, 오른쪽 키가 모두 눌리지 않은 상태
     if (g_matches[matchNum].player1.dx > 0) {
       g_matches[matchNum].player1.dx -= 1;

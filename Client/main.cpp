@@ -539,7 +539,7 @@ DWORD WINAPI SendClient(LPVOID lp_param)
         // 눌린 것이 없으면 참여중인 것을 확인하는 값을 보냄
         if (buffer.empty())
         {
-            buffer.push_back('A');
+            buffer.push_back('a');
         }
 
         // 전송 및 로그
