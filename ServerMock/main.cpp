@@ -29,7 +29,7 @@ std::vector server_local_bullets{server_types::Bullet{1, 4}, {2, 5}, {3, 4}};
 int send_player_info(SOCKET player_1_sock) {
   using HeaderType = sendParam::PKT_CAT;
   using InfoType = sendParam::playerInfo;
-  using PacketType = sendParam::sendParam_alt;
+  using PacketType = sendParam::sendParam;
 
   auto constexpr info_size = sizeof(InfoType);
   auto constexpr header_size = sizeof(HeaderType);
