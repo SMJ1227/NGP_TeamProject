@@ -603,7 +603,7 @@ DWORD WINAPI SendClient(LPVOID lp_param)
         }
 
         // 입력 대기
-        Sleep(1000 / 60);
+        Sleep(1000 / 30);
     }
     return 0;
 }
