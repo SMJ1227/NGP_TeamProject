@@ -15,6 +15,7 @@
 CRITICAL_SECTION cs;
 HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 std::vector<DWORD> deleteThreadIDs;
+int matchCount = 0;
 
 typedef struct Player {
   int x, y;
@@ -71,10 +72,6 @@ typedef struct MATCH {
   std::vector<Enemy> g_enemies;
   std::vector<Bullet> g_bullets;
 
-  bool operator==(const MATCH& other) {
-    return client_sock[0] == other.client_sock[0] &&
-           client_sock[1] == other.client_sock[1];
-  }
 };
 std::vector<MATCH> g_matches;
 
@@ -107,58 +104,52 @@ void CheckPlayerBulletCollisions(int matchNum);
 void CheckPlayersCollisions(int matchNum);
 void updateSendParam(int matchNum);
 
+inline void initMatch(int matchNum){
+    g_matches[matchNum].client_sock[0] = NULL;
+    g_matches[matchNum].client_sock[1] = NULL;
+    g_matches[matchNum].recvThread[0] = NULL;
+    g_matches[matchNum].recvThread[1] = NULL;
+    g_matches[matchNum].logicThread = NULL;
+    g_matches[matchNum].header = false;
+    g_matches[matchNum].recvThreadID[0] = NULL;
+    g_matches[matchNum].recvThreadID[1] = NULL;
+    g_matches[matchNum].logicThreadID = NULL;
+    g_matches[matchNum].mapNum = 1;
+    g_matches[matchNum].score = 0;
+    g_matches[matchNum].shootInterval = 0;
+};
+
 // 매치를 삭제하는 함수
 void closeSocketFunc(SOCKET client_sock, char matchNum, char playerNum) {
   printf("%dmatch %dplayer disconnectd\n", matchNum, playerNum);
 
-  // deleteThreadIDs에 삭제해야할 스레드 ID 추가, 이 함수 호출한 recv스레드는 호출 후 자살해서 벡터에 추가X
   if (playerNum == 0)
   {
-      // deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[1]);
       if (std::find(deleteThreadIDs.begin(), deleteThreadIDs.end(),
                     g_matches[matchNum].recvThreadID[1]) ==
           deleteThreadIDs.end())
       {
           deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[1]);
       }
-      // closesocket(g_matches[matchNum].client_sock[1]);
   }
   else if (playerNum == 1)
   {
-      // deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[0]);
       if (std::find(deleteThreadIDs.begin(), deleteThreadIDs.end(),
                     g_matches[matchNum].recvThreadID[0]) ==
           deleteThreadIDs.end())
       {
           deleteThreadIDs.push_back(g_matches[matchNum].recvThreadID[0]);
       }
-      // closesocket(g_matches[matchNum].client_sock[0]);
   }
   deleteThreadIDs.push_back(g_matches[matchNum].logicThreadID);
   for (const auto& threadID : deleteThreadIDs)
   {
       printf("deleteThreadIDs: %d\n", threadID);
   }
-  SetEvent(g_matches[matchNum].hEvent);
-  /*std::vector<MATCH>::iterator iter = g_matches.begin();
-  for (int i = 0; i < matchNum; i++) iter++;
-  g_matches.erase(std::remove(g_matches.begin(), g_matches.end(), *iter),
-                  g_matches.end());
-  for (auto i = g_matches.begin() + 1; i != g_matches.end(); i++)
-  {
-      i->matchNum = 0;
-  }*/
-  //g_matches.erase(g_matches.begin() + matchNum);
-  // 디버그용 출력
-  //printf("delete match: %d\n", matchNum);
-  //printf("match size: %du\n", g_matches.size());
-  //for (int i = 0; i < g_matches.size(); i++) {
-  //  g_matches[i].matchNum = i;
-  //  //printf("%d match's matchNum: %d\n", i, g_matches[i].matchNum);
-  //}
 
-  //printf("%d match's matchNum: %d\n", 1, g_matches[1].matchNum);
-  //printf("%d match's matchNum: %d\n", 2, g_matches[2].matchNum);
+  initMatch(matchNum);
+  
+  SetEvent(g_matches[matchNum].hEvent);
 }
 
 void UpdateGameLogic(int matchNum) {
@@ -166,8 +157,7 @@ void UpdateGameLogic(int matchNum) {
   applyGravity(matchNum);
   movePlayer(matchNum);
   if (int isNext =
-          IsNextColliding(matchNum)) {  // 1(p1), 2(p2)를 리턴하면 조건문 진입
-    // p1이 이기면 score+=10, p2가 이기면 score+=1
+          IsNextColliding(matchNum)) { 
     if (isNext == 1)
       g_matches[matchNum].score += 10;
     else if (isNext == 2)
@@ -181,12 +171,6 @@ void UpdateGameLogic(int matchNum) {
       InitMap(matchNum, map2);
     }
 
-    // mapNum 3 -> 4 게임종료, ### mapNum == 4이면 게임 종료로 판단?
-    // 비정상 종료를 몰수승으로 판단하면 게임 종료 시에는 반드시 map_num = 4인
-    // 상태로 게임 종료
-    // -> CHANGE_MAP 패킷의 mapNum으로 게임 종료, 승 패를 알림
-    // 클라이언트에 보낼때는 5와 6을 나눠서 보냄, 5는승리, 6은 패배
-    // 서버 입장에서 5는 p1승, 6은 p2승
     else if (g_matches[matchNum].mapNum == 3 &&
              g_matches[matchNum].score >= 20) {
       g_matches[matchNum].mapNum = 5;
@@ -230,7 +214,6 @@ DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
   delete (int*)lpParam;
 
   while (true) {
-    // recv 스레드에서 데이터 처리 준비 완료 신호 대기
     WaitForSingleObject(g_matches[matchNum].hEvent, INFINITE);
 
     EnterCriticalSection(&cs);
@@ -243,17 +226,6 @@ DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
     }
     LeaveCriticalSection(&cs);
 
-    //EnterCriticalSection(&cs);
-    //printf("matchNum: %d, g_matches[matchNum].matchNum: %d\n", matchNum,
-    //       g_matches[matchNum].matchNum);
-    //while (matchNum >= 0 && g_matches[matchNum].matchNum != matchNum)
-    //{
-    //    // 디버그옹 출력
-    //    printf("matchNum--\n");
-    //    matchNum--;
-    //}
-    //LeaveCriticalSection(&cs);
-
     EnterCriticalSection(&cs);
     UpdateGameLogic(matchNum);
     LeaveCriticalSection(&cs);
@@ -263,7 +235,6 @@ DWORD WINAPI GameLogicUpdateThread(LPVOID lpParam) {
 
     for (int i = 0; i < 2; ++i) {
       if (g_matches[matchNum].client_sock[i] == NULL) {
-        // printf("클라이언트 %d 소켓이 NULL입니다.\n", i);
         continue;
       }
       if (!g_matches[matchNum].header) {  // playerinfo
@@ -365,16 +336,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
           ExitThread(0);
       }
       LeaveCriticalSection(&cs);
-    // 벡터의 유효한 범위 내에서, 현재 매치의 번호와, 매치[현재 매치번호]의 매치
-    // 번호가 일치하는지 비교한다, 다르다면 감소
-    /*EnterCriticalSection(&cs);
-    printf("matchNum: %d, g_matches[matchNum].matchNum: %d\n", matchNum,
-             g_matches[matchNum].matchNum);
-    while (g_matches[matchNum].matchNum != matchNum) {
-      printf("matchNum--\n");
-      matchNum--;
-    }
-    LeaveCriticalSection(&cs);*/
+
     retval = recv(client_sock, buf, BUFSIZE, 0);
     if (retval == SOCKET_ERROR) {
       err_display("recv()");
@@ -435,8 +397,7 @@ DWORD WINAPI RecvProcessClient(LPVOID arg) {
          ntohs(clientaddr.sin_port));
   closeSocketFunc(client_sock, matchNum, playerNum);
   LeaveCriticalSection(&cs);
-  // closeSocketFunc으로 매치가 삭제돼서 SetEvent를 호출하면 다른 매치의 이벤트가 삭제됨 아닌가 로직은 삭제되는데 리시브가 삭제안됨
-  //SetEvent(g_matches[matchNum].hEvent);
+
   ExitThread(0);
   return 0;
 }
@@ -488,58 +449,58 @@ int main(int argc, char* argv[]) {
       err_display("accept()");
       break;
     }
-    // 매치 생성 조건 - 현재 매치가 없거나(0), 마지막 매치의 player가 다 차있으면 생성 
-    // 플레이어 1 생성 조건: 마지막 매치의 소켓0번이 비었으면 생성
-    // 플레이어 2 생성 조건: 마지막 매치의 소켓1이 차있고 소켓2가 비었으면 생성
-    // 타이머 생성 조건: 플레이어 1 생성할 때
+
     char addr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &clientaddr.sin_addr, addr, sizeof(addr));
     /*printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n", addr,
            ntohs(clientaddr.sin_port));*/
     // 매치 생성
+    std::vector<MATCH>::iterator matchIter;
     if (g_matches.size() == 0 ||
-        (!g_matches.empty() && g_matches.back().client_sock[0] != NULL &&
-         g_matches.back().client_sock[1] != NULL)) {
-      //g_matches.push_back(MATCH());
-      MATCH newMatch;
-      newMatch.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // 이벤트 생성
-      g_matches.push_back(newMatch);
-    }
-    // 플레이어1 스레드, 타이머 스레드 생성
-    if (g_matches.back().client_sock[0] == NULL) {
-      rParam->playerNum = 0;
-      rParam->matchNum = g_matches.size() - 1;
-      *matchNumParam = g_matches.size() - 1;
-      // g_matches의 클라이언트 소켓, 매치 넘버 업데이트
-      g_matches.back().client_sock[0] = rParam->client_sock;
-      g_matches.back().matchNum = g_matches.size() - 1;
-      initAll(*matchNumParam);
-      // 수신 스레드 생성
-      g_matches.back().recvThread[0] =
-          CreateThread(NULL, 0, RecvProcessClient, rParam, 0,
-                       &g_matches.back().recvThreadID[0]);
-      // 디버그용 출력
-      printf("%zu match is waiting.. num of client: %d\n", g_matches.size() - 1,
-             1);
-      // 타이머 스레드 생성
-      g_matches.back().logicThread =
-          CreateThread(NULL, 0, GameLogicUpdateThread, matchNumParam, 0, &g_matches.back().logicThreadID);
-    }
-    // 플레이어2 스레드 생성
+            std::find_if(g_matches.begin(), g_matches.end(),
+                         [](const MATCH& match) {
+                             return match.client_sock[0] == NULL ||
+                                 match.client_sock[1] == NULL;
+                         }) == g_matches.end())
+    {
 
-    else if (g_matches.back().client_sock[0] != NULL &&
-             g_matches.back().client_sock[1] == NULL) {
-      printf("enter for 2\n");
-      rParam->playerNum = 1;
-      rParam->matchNum = g_matches.size() - 1;
-      g_matches.back().client_sock[1] = rParam->client_sock;
-      // 디버그용 출력
-      printf("%dmatch %dplayer thread created\n", rParam->matchNum,
-             rParam->playerNum);
-      g_matches.back().recvThread[1] =
-          CreateThread(NULL, 0, RecvProcessClient, rParam, 0,
-                       &g_matches.back().recvThreadID[1]);
-      initPlayer(*matchNumParam);
+        MATCH newMatch;
+        newMatch.matchNum = matchCount;
+        matchCount++;
+        newMatch.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); // 이벤트 생성
+        g_matches.push_back(newMatch);
+    }
+
+    if ((matchIter = std::find_if(g_matches.begin(), g_matches.end(),
+                                  [](const MATCH& match) {
+                                      return match.client_sock[0] != NULL &&
+                                          match.client_sock[1] == NULL;
+                                  })) != g_matches.end())
+    {
+        rParam->playerNum = 1;
+        rParam->matchNum = matchIter->matchNum;
+        matchIter->client_sock[1] = rParam->client_sock;
+        matchIter->recvThread[1] = CreateThread(
+            NULL, 0, RecvProcessClient, rParam, 0, &matchIter->recvThreadID[1]);
+        initPlayer(*matchNumParam);
+    }
+    
+    // 플레이어1 스레드, 타이머 스레드 생성
+    else if ((matchIter = std::find_if(g_matches.begin(), g_matches.end(),
+                         [](const MATCH& match) {
+                             return match.client_sock[0] == NULL &&
+                                 match.client_sock[1] == NULL;
+                         })) != g_matches.end())
+    {
+
+        rParam->playerNum = 0;
+        rParam->matchNum = matchIter->matchNum;
+        *matchNumParam = matchIter->matchNum;
+        // g_matches의 클라이언트 소켓, 매치 넘버 업데이트
+        matchIter->client_sock[0] = rParam->client_sock;
+        initAll(*matchNumParam);
+        matchIter->recvThread[0] = CreateThread(NULL, 0, RecvProcessClient, rParam, 0, &matchIter->recvThreadID[0]);
+        matchIter->logicThread = CreateThread(NULL, 0, GameLogicUpdateThread, matchNumParam, 0, &matchIter->logicThreadID);
     }
   }
 
