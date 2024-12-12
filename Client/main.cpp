@@ -379,7 +379,13 @@ DWORD WINAPI RecvClient(LPVOID lp_param)
                         new PlayerInfoMSG{.my_player = packet_ptr->myInfo,
                                           .other_player = packet_ptr->otherInfo,
                                           .bullets{}};
-                    // 
+
+                    // (recved_buffer_size - kInfoPacketSize) %
+                    // sizeof(sendParam::Bullet),
+                    // sizeof(sendParam::MapInfoPacket)
+                    //
+                    // !≡ 0
+
                     if (0 < bullets_size)
                     {
                         if (0 ==
@@ -397,7 +403,8 @@ DWORD WINAPI RecvClient(LPVOID lp_param)
                         }
                         else
                         {
-                            player_infoes->bullets.push_back({.x= -1, .y= -1});
+                            player_infoes->bullets.push_back(
+                                {.x = -1, .y = -1});
                         }
                     }
 
